@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>MemcardManager</AssemblyName>
+    <RootNamespace>MemcardManager</RootNamespace>
+    <ApplicationIcon>..\assets\memcard.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <Version>1.0.0</Version>
+    <Product>PS1/PS2 Memory Card Manager</Product>
+    <Description>Memory Card Manager für PS1- und PS2-Karten (PCSX2, PS3, OPL, ePSXe, DuckStation ...)</Description>
+    <SatelliteResourceLanguages>de</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>CA1416;WFO1000</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\memcard.ico" LogicalName="memcard.ico" />
+  </ItemGroup>
+</Project>
