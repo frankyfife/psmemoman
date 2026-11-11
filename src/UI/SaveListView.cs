@@ -23,7 +23,7 @@ public sealed class SaveListView : Control
     public event EventHandler<List<CardEntry>>? DragStarting;
     public event EventHandler? DeletePressed;
 
-    public string EmptyText { get; set; } = "Keine Savegames auf dieser Karte.\nSaves hierher ziehen zum Importieren.";
+    public string EmptyText { get; set; } = L.T("Keine Savegames auf dieser Karte.\nSaves hierher ziehen zum Importieren.", "No saves on this card.\nDrag saves here to import.");
 
     public SaveListView()
     {
@@ -213,12 +213,12 @@ public sealed class SaveListView : Control
         TextRenderer.DrawText(g, it.Name, Theme.Small, new Rectangle(x, y, textW, hs), sel ? Theme.Text : Theme.Dim, flags);
         y += hs;
         string info = it.Platform == Platform.PS1
-            ? $"{it.Blocks} Block{(it.Blocks == 1 ? "" : "e")} · {Theme.FormatSize(it.Size)}"
+            ? L.T($"{it.Blocks} Block{(it.Blocks == 1 ? "" : "e")} · {Theme.FormatSize(it.Size)}", $"{it.Blocks} block{(it.Blocks == 1 ? "" : "s")} · {Theme.FormatSize(it.Size)}")
             : Theme.FormatSize(it.Size) + (it.Modified is { } m ? " · " + m.ToString("dd.MM.yyyy HH:mm") : "");
         Color infoColor = sel ? Theme.Text : Theme.Dim;
         if (it.Damaged)
         {
-            info = "✖ BESCHÄDIGT: " + it.Problem;
+            info = L.T("✖ BESCHÄDIGT: ", "✖ DAMAGED: ") + it.Problem;
             infoColor = Color.FromArgb(255, 120, 120);
             using var red = new SolidBrush(Theme.Danger);
             g.FillRectangle(red, r.X, r.Y, Dpi.S(4), r.Height);

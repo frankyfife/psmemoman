@@ -53,7 +53,7 @@ public abstract class MemoryCard
     /// <summary>File system timestamp of the card at load time (to detect external changes).</summary>
     public DateTime LoadedWriteTimeUtc { get; set; }
 
-    public string DisplayName => string.IsNullOrEmpty(FilePath) ? "(neu)" : Path.GetFileName(FilePath.TrimEnd('\\', '/'));
+    public string DisplayName => string.IsNullOrEmpty(FilePath) ? L.T("(neu)", "(new)") : Path.GetFileName(FilePath.TrimEnd('\\', '/'));
 
     public CardEntry? Find(string name) => Entries.FirstOrDefault(e => e.Name == name);
 
@@ -74,8 +74,8 @@ public abstract class MemoryCard
     {
         foreach (var e in Entries)
         {
-            if (e.Damaged) list.Add(new CardIssue(IssueLevel.Error, $"Savegame „{e.Name}“ ist beschädigt: {e.Problem} – Rettungs-Export möglich."));
-            else if (e.Problem != null) list.Add(new CardIssue(IssueLevel.Info, $"„{e.Name}“: {e.Problem}"));
+            if (e.Damaged) list.Add(new CardIssue(IssueLevel.Error, L.T($"Savegame „{e.Name}“ ist beschädigt: {e.Problem} – Rettungs-Export möglich.", $"Save \"{e.Name}\" is damaged: {e.Problem} – rescue export possible.")));
+            else if (e.Problem != null) list.Add(new CardIssue(IssueLevel.Info, L.T($"„{e.Name}“: {e.Problem}", $"\"{e.Name}\": {e.Problem}")));
         }
     }
 
@@ -101,7 +101,7 @@ public sealed class UnformattedCardException : Exception
     public bool Ecc { get; }
 
     public UnformattedCardException(Platform p, int sizeMb, bool ecc)
-        : base("Die Karte ist unformatiert (leer).")
+        : base(L.T("Die Karte ist unformatiert (leer).", "The card is unformatted (empty)."))
     {
         Platform = p;
         SizeMb = sizeMb;

@@ -10,6 +10,7 @@ public static class Dpi
     public static int S(int v) => (int)Math.Round(v * F);
     public static float S(float v) => v * F;
     public static Size S(Size s) => new(S(s.Width), S(s.Height));
+    public static Point S(Point p) => new(S(p.X), S(p.Y));
     public static Padding S(Padding p) => new(S(p.Left), S(p.Top), S(p.Right), S(p.Bottom));
 }
 
@@ -132,6 +133,7 @@ public sealed class AppSettings
     public bool AutoSave { get; set; }
     public bool AnimateIcons { get; set; } = true;
     public bool ReopenCards { get; set; } = true;
+    public string Language { get; set; } = "";
     public string LastExportDir { get; set; } = "";
     public string LastImportDir { get; set; } = "";
     public string LastCardDir { get; set; } = "";

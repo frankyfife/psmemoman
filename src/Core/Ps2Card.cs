@@ -26,7 +26,7 @@ public sealed class Ps2Card : MemoryCard
     public int ClusterSize => _clusterSize;
     public override Platform Platform => Platform.PS2;
     public override string FormatName =>
-        $"{_kind} – PS2, {(long)_clustersPerCard * _clusterSize / (1024 * 1024)} MB, {(HasEcc ? "mit ECC" : "ohne ECC")}";
+        $"{_kind} – PS2, {(long)_clustersPerCard * _clusterSize / (1024 * 1024)} MB, {(HasEcc ? L.T("mit ECC", "with ECC") : L.T("ohne ECC", "without ECC"))}";
     public override IReadOnlyList<CardEntry> Entries => _entries;
     public override long TotalBytes => (long)_allocLimit * _clusterSize;
     public override long FreeBytes => (long)CountFree() * _clusterSize;
@@ -38,7 +38,7 @@ public sealed class Ps2Card : MemoryCard
         FilePath = path;
         _kind = kind;
         _img = img;
-        if (!IsPs2Image(img)) throw new InvalidDataException("Keine PS2-Memory-Card (Superblock fehlt). Evtl. ist die Karte unformatiert.");
+        if (!IsPs2Image(img)) throw new InvalidDataException(L.T("Keine PS2-Memory-Card (Superblock fehlt). Evtl. ist die Karte unformatiert.", "Not a PS2 memory card (superblock missing). The card may be unformatted."));
         var sb = img.AsSpan();
         _pageSize = Bin.U16(sb, 40);
         _ppc = Bin.U16(sb, 42);
@@ -51,7 +51,7 @@ public sealed class Ps2Card : MemoryCard
         _gb2 = Bin.U32(sb, 68);
         for (int i = 0; i < 32; i++) _ifc[i] = Bin.U32(sb, 80 + i * 4);
         if (_pageSize < 512 || _pageSize > 8192 || _ppc < 1 || _ppc > 16 || _clustersPerCard == 0 || _clustersPerCard > 0x100000)
-            throw new InvalidDataException("Superblock der PS2-Karte ist ungültig.");
+            throw new InvalidDataException(L.T("Superblock der PS2-Karte ist ungültig.", "Superblock of the PS2 card is invalid."));
         _clusterSize = _pageSize * _ppc;
         _spare = Bin.DivUp(_pageSize, 128) * 4;
         long pages = (long)_clustersPerCard * _ppc;
@@ -69,7 +69,7 @@ public sealed class Ps2Card : MemoryCard
                     ok = Ecc.Check(page.AsSpan(c * 128, 128), img.AsSpan(_pageSize + c * 3, 3)) == 0;
                 HasEcc = ok;
             }
-            Warnings.Add("Kartenabbild ist kürzer als im Superblock angegeben.");
+            Warnings.Add(L.T("Kartenabbild ist kürzer als im Superblock angegeben.", "Card image is shorter than stated in the superblock."));
         }
         _rawPage = _pageSize + (HasEcc ? _spare : 0);
 
@@ -123,7 +123,7 @@ public sealed class Ps2Card : MemoryCard
         {
             long page = (long)abs * _ppc + p;
             long off = page * _rawPage;
-            if (off + _rawPage > _img.Length) throw new IOException("Schreibversuch außerhalb des Kartenabbilds.");
+            if (off + _rawPage > _img.Length) throw new IOException(L.T("Schreibversuch außerhalb des Kartenabbilds.", "Write attempt outside the card image."));
             var src = data.Slice(p * _pageSize, _pageSize);
             src.CopyTo(_img.AsSpan((int)off, _pageSize));
             if (HasEcc)
@@ -142,7 +142,7 @@ public sealed class Ps2Card : MemoryCard
     {
         int epc = _clusterSize / 4;
         int fatClusters = Bin.DivUp((int)_allocEnd, epc);
-        if (fatClusters > 32 * epc) throw new InvalidDataException("FAT der PS2-Karte ist ungültig.");
+        if (fatClusters > 32 * epc) throw new InvalidDataException(L.T("FAT der PS2-Karte ist ungültig.", "FAT of the PS2 card is invalid."));
         _fat = new uint[fatClusters * epc];
         _fatAbs = new uint[fatClusters];
         _fatDirty = new bool[fatClusters];
@@ -150,10 +150,10 @@ public sealed class Ps2Card : MemoryCard
         for (int k = 0; k < fatClusters; k++)
         {
             uint ind = _ifc[k / epc];
-            if (ind >= _clustersPerCard) throw new InvalidDataException("Indirekte FAT der PS2-Karte ist ungültig.");
+            if (ind >= _clustersPerCard) throw new InvalidDataException(L.T("Indirekte FAT der PS2-Karte ist ungültig.", "Indirect FAT of the PS2 card is invalid."));
             if (!indCache.TryGetValue(ind, out var indData)) indCache[ind] = indData = ReadCluster(ind);
             uint abs = Bin.U32(indData, (k % epc) * 4);
-            if (abs >= _clustersPerCard) throw new InvalidDataException("FAT-Verweis der PS2-Karte ist ungültig.");
+            if (abs >= _clustersPerCard) throw new InvalidDataException(L.T("FAT-Verweis der PS2-Karte ist ungültig.", "FAT reference of the PS2 card is invalid."));
             _fatAbs[k] = abs;
             var data = ReadCluster(abs);
             for (int j = 0; j < epc; j++) _fat[k * epc + j] = Bin.U32(data, j * 4);
@@ -207,7 +207,7 @@ public sealed class Ps2Card : MemoryCard
             Array.Copy(d, 0, res, pos, n);
             pos += n;
         }
-        if (pos < length) throw new InvalidDataException("Clusterkette ist kürzer als die Dateigröße (beschädigt).");
+        if (pos < length) throw new InvalidDataException(L.T("Clusterkette ist kürzer als die Dateigröße (beschädigt).", "Cluster chain is shorter than the file size (damaged)."));
         return res;
     }
 
@@ -235,7 +235,7 @@ public sealed class Ps2Card : MemoryCard
 
     List<Ps2DirEntry> ReadDir(uint first, uint count)
     {
-        if (count > 100000) throw new InvalidDataException("Verzeichnis ist beschädigt.");
+        if (count > 100000) throw new InvalidDataException(L.T("Verzeichnis ist beschädigt.", "Directory is damaged."));
         var d = ReadData(first, (long)count * Ps2DirEntry.Size);
         var list = new List<Ps2DirEntry>((int)count);
         for (int i = 0; i < count; i++) list.Add(Ps2DirEntry.Parse(d.AsSpan(i * Ps2DirEntry.Size)));
@@ -247,7 +247,7 @@ public sealed class Ps2Card : MemoryCard
     List<Ps2DirEntry> ReadRoot()
     {
         var dot = RootDot();
-        if (dot.Name != "." || !dot.IsDir) throw new InvalidDataException("Hauptverzeichnis der Karte ist beschädigt.");
+        if (dot.Name != "." || !dot.IsDir) throw new InvalidDataException(L.T("Hauptverzeichnis der Karte ist beschädigt.", "Root directory of the card is damaged."));
         return ReadDir(_rootCluster, dot.Length);
     }
 
@@ -255,7 +255,7 @@ public sealed class Ps2Card : MemoryCard
     {
         int per = _clusterSize / Ps2DirEntry.Size;
         var chain = Chain(dirFirst);
-        if (index / per >= chain.Count) throw new InvalidDataException("Verzeichniseintrag außerhalb der Clusterkette.");
+        if (index / per >= chain.Count) throw new InvalidDataException(L.T("Verzeichniseintrag außerhalb der Clusterkette.", "Directory entry outside the cluster chain."));
         uint c = chain[index / per];
         var d = ReadAlloc(c);
         e.Write(d.AsSpan(index % per * Ps2DirEntry.Size));
@@ -284,7 +284,7 @@ public sealed class Ps2Card : MemoryCard
             }
             _allocCursor = 0;
         }
-        throw new CardFullException("Nicht genug freier Speicher auf der Karte.");
+        throw new CardFullException(L.T("Nicht genug freier Speicher auf der Karte.", "Not enough free space on the card."));
     }
 
     uint AllocChain(int count)
@@ -318,7 +318,7 @@ public sealed class Ps2Card : MemoryCard
             if (!e.Exists) continue;
             if (!e.IsDir)
             {
-                Warnings.Add($"Datei im Hauptverzeichnis wird ignoriert: {e.Name}");
+                Warnings.Add(L.T($"Datei im Hauptverzeichnis wird ignoriert: {e.Name}", $"File in root directory is ignored: {e.Name}"));
                 continue;
             }
             var game = ReadSave(e);
@@ -342,7 +342,7 @@ public sealed class Ps2Card : MemoryCard
         List<Ps2DirEntry> ents;
         if (de.Length > 10000 || !ReadDataRescue(de.Cluster, (long)Math.Min(de.Length, 10000u) * Ps2DirEntry.Size, out var dirData))
         {
-            problems.Add("Verzeichnis ist beschädigt");
+            problems.Add(L.T("Verzeichnis ist beschädigt", "directory is damaged"));
             if (de.Length > 10000) dirData = Array.Empty<byte>();
             else ReadDataRescue(de.Cluster, (long)de.Length * Ps2DirEntry.Size, out dirData);
         }
@@ -355,14 +355,14 @@ public sealed class Ps2Card : MemoryCard
             if (e.IsFile)
             {
                 bool ok = ReadDataRescue(e.Cluster, e.Length, out var data);
-                if (!ok) problems.Add($"Datei „{e.Name}“ unvollständig/fehlerhaft");
+                if (!ok) problems.Add(L.T($"Datei „{e.Name}“ unvollständig/fehlerhaft", $"file \"{e.Name}\" incomplete/faulty"));
                 s.Files.Add(new Ps2SaveFile
                 {
                     Name = e.Name, Mode = e.Mode, Created = e.Created, Modified = e.Modified, Attr = e.Attr, Data = data
                 });
             }
             else
-                s.Warnings.Add($"Unterverzeichnis '{e.Name}' wird nicht unterstützt und ignoriert.");
+                s.Warnings.Add(L.T($"Unterverzeichnis '{e.Name}' wird nicht unterstützt und ignoriert.", $"Subdirectory '{e.Name}' is not supported and ignored."));
         }
         if (problems.Count > 0)
         {
@@ -372,10 +372,10 @@ public sealed class Ps2Card : MemoryCard
         }
         // minor issues (the save still works on the console, but shows no / a default icon)
         var sysFile = s.Find("icon.sys");
-        if (sysFile == null) g.Problem = s.DirName.Contains("DATA-SYSTEM") ? null : "keine icon.sys (kein eigenes Icon)";
-        else if (s.IconSys == null) g.Problem = "icon.sys ist ungültig";
+        if (sysFile == null) g.Problem = s.DirName.Contains("DATA-SYSTEM") ? null : L.T("keine icon.sys (kein eigenes Icon)", "no icon.sys (no own icon)");
+        else if (s.IconSys == null) g.Problem = L.T("icon.sys ist ungültig", "icon.sys is invalid");
         else if (s.Find(s.IconSys.IconNormal) == null && !s.DirName.Contains("DATA-SYSTEM"))
-            g.Problem = $"Icon-Datei „{s.IconSys.IconNormal}“ fehlt";
+            g.Problem = L.T($"Icon-Datei „{s.IconSys.IconNormal}“ fehlt", $"icon file \"{s.IconSys.IconNormal}\" missing");
         return g;
     }
 
@@ -392,7 +392,7 @@ public sealed class Ps2Card : MemoryCard
         int idx = -1;
         for (int i = 2; i < root.Count; i++)
             if (root[i].Exists && root[i].Name == name) { idx = i; break; }
-        if (idx < 0) throw new InvalidOperationException($"Savegame '{name}' nicht gefunden.");
+        if (idx < 0) throw new InvalidOperationException(L.T($"Savegame '{name}' nicht gefunden.", $"Save '{name}' not found."));
         FreeTree(root[idx], 0, UsedClusters(idx));
         var e = root[idx];
         e.Mode = (ushort)(e.Mode & ~Ps2DirEntry.DfExists);
@@ -452,9 +452,9 @@ public sealed class Ps2Card : MemoryCard
 
     public override void Import(SaveGame save)
     {
-        var s = save.Ps2 ?? throw new InvalidOperationException("PS1-Savegames können nicht auf eine PS2-Karte kopiert werden.");
+        var s = save.Ps2 ?? throw new InvalidOperationException(L.T("PS1-Savegames können nicht auf eine PS2-Karte kopiert werden.", "PS1 saves cannot be copied to a PS2 card."));
         s.Validate();
-        if (Exists(s.DirName)) throw new InvalidOperationException($"Savegame '{s.DirName}' existiert bereits auf der Karte.");
+        if (Exists(s.DirName)) throw new InvalidOperationException(L.T($"Savegame '{s.DirName}' existiert bereits auf der Karte.", $"Save '{s.DirName}' already exists on the card."));
 
         int per = _clusterSize / Ps2DirEntry.Size;
         var root = ReadRoot();
@@ -468,7 +468,7 @@ public sealed class Ps2Card : MemoryCard
         }
         int need = s.ClustersNeeded(_clusterSize) + extra;
         if (need > CountFree())
-            throw new CardFullException($"Nicht genug Platz für '{s.DirName}': benötigt {need} KB, frei {CountFree()} KB.");
+            throw new CardFullException(L.T($"Nicht genug Platz für '{s.DirName}': benötigt {need} KB, frei {CountFree()} KB.", $"Not enough space for '{s.DirName}': {need} KB needed, {CountFree()} KB free."));
 
         // Snapshot to roll back on any failure (keeps the in-memory card consistent).
         var imgBackup = (byte[])_img.Clone();
@@ -591,10 +591,10 @@ public sealed class Ps2Card : MemoryCard
         {
             if (len <= 0 || first == ChainEnd) return;
             var ch = Chain(first);
-            if (ch.Count != Bin.DivUp(len, _clusterSize)) { s.Errors.Add($"{name}: Clusterkette passt nicht zur Größe."); s.BrokenChains++; }
+            if (ch.Count != Bin.DivUp(len, _clusterSize)) { s.Errors.Add(L.T($"{name}: Clusterkette passt nicht zur Größe.", $"{name}: cluster chain does not match the size.")); s.BrokenChains++; }
             foreach (var c in ch)
             {
-                if (used[c]) { s.Errors.Add($"{name}: Cluster {c} wird mehrfach verwendet (querverlinkt)."); s.CrossLinked++; }
+                if (used[c]) { s.Errors.Add(L.T($"{name}: Cluster {c} wird mehrfach verwendet (querverlinkt).", $"{name}: cluster {c} is used more than once (cross-linked).")); s.CrossLinked++; }
                 used[c] = true;
             }
         }
@@ -608,7 +608,7 @@ public sealed class Ps2Card : MemoryCard
             if (e.IsDir)
             {
                 Mark(e.Cluster, e.Length * 512L, e.Name);
-                if (e.Length > 10000) { s.Errors.Add($"{e.Name}: Verzeichnisgröße unplausibel."); s.BrokenChains++; continue; }
+                if (e.Length > 10000) { s.Errors.Add(L.T($"{e.Name}: Verzeichnisgröße unplausibel.", $"{e.Name}: implausible directory size.")); s.BrokenChains++; continue; }
                 ReadDataRescue(e.Cluster, (long)e.Length * Ps2DirEntry.Size, out var d);
                 for (int k = 2 * Ps2DirEntry.Size; k + Ps2DirEntry.Size <= d.Length; k += Ps2DirEntry.Size)
                 {
@@ -627,7 +627,7 @@ public sealed class Ps2Card : MemoryCard
     {
         var s = ScanFileSystem();
         var msgs = new List<string>(s.Errors);
-        if (s.Lost.Count > 0) msgs.Add($"{s.Lost.Count} verlorene Cluster (belegt, aber keiner Datei zugeordnet).");
+        if (s.Lost.Count > 0) msgs.Add(L.T($"{s.Lost.Count} verlorene Cluster (belegt, aber keiner Datei zugeordnet).", $"{s.Lost.Count} lost clusters (allocated, but not assigned to any file)."));
         return msgs;
     }
 
@@ -638,23 +638,23 @@ public sealed class Ps2Card : MemoryCard
         try { s = ScanFileSystem(); }
         catch (Exception ex)
         {
-            list.Add(new CardIssue(IssueLevel.Error, "Dateisystem nicht lesbar: " + ex.Message));
+            list.Add(new CardIssue(IssueLevel.Error, L.T("Dateisystem nicht lesbar: ", "File system not readable: ") + ex.Message));
             return list;
         }
         foreach (var w in Warnings)
-            if (!w.Contains("Bitfehler")) list.Add(new CardIssue(IssueLevel.Warning, w));
+            if (!w.Contains(L.T("Bitfehler", "bit error"))) list.Add(new CardIssue(IssueLevel.Warning, w));
         foreach (var err in s.Errors.Distinct().Take(30)) list.Add(new CardIssue(IssueLevel.Error, err));
         int fixable = _eccFixable.Count(c => !_eccBad.Contains(c));
         if (fixable > 0)
             list.Add(new CardIssue(IssueLevel.Warning,
-                $"ECC: Bitfehler in {fixable} Clustern wurden beim Lesen korrigiert – die Korrektur kann dauerhaft zurückgeschrieben werden.", true));
+                L.T($"ECC: Bitfehler in {fixable} Clustern wurden beim Lesen korrigiert – die Korrektur kann dauerhaft zurückgeschrieben werden.", $"ECC: bit errors in {fixable} clusters were corrected while reading – the correction can be written back permanently."), true));
         if (_eccBad.Count > 0)
-            list.Add(new CardIssue(IssueLevel.Error, $"ECC: {_eccBad.Count} Cluster mit nicht korrigierbaren Fehlern – Daten darin evtl. falsch (werden nicht verändert)."));
+            list.Add(new CardIssue(IssueLevel.Error, L.T($"ECC: {_eccBad.Count} Cluster mit nicht korrigierbaren Fehlern – Daten darin evtl. falsch (werden nicht verändert).", $"ECC: {_eccBad.Count} clusters with uncorrectable errors – data in them may be wrong (left unchanged).")));
         bool damaged = Entries.Any(e => e.Damaged) || s.BrokenChains > 0 || s.CrossLinked > 0;
         if (s.Lost.Count > 0)
             list.Add(damaged
-                ? new CardIssue(IssueLevel.Info, $"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB). Werden NICHT freigegeben, solange beschädigte Saves existieren (könnten zu ihnen gehören).")
-                : new CardIssue(IssueLevel.Info, $"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB belegt, aber keinem Save zugeordnet) – können freigegeben werden.", true));
+                ? new CardIssue(IssueLevel.Info, L.T($"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB). Werden NICHT freigegeben, solange beschädigte Saves existieren (könnten zu ihnen gehören).", $"{s.Lost.Count} lost clusters ({s.Lost.Count} KB). They are NOT freed while damaged saves exist (they could belong to them)."))
+                : new CardIssue(IssueLevel.Info, L.T($"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB belegt, aber keinem Save zugeordnet) – können freigegeben werden.", $"{s.Lost.Count} lost clusters ({s.Lost.Count} KB allocated, but not assigned to any save) – can be freed."), true));
         AddSaveIssues(list);
         return list;
     }
@@ -674,7 +674,7 @@ public sealed class Ps2Card : MemoryCard
             }
             _eccFixable.Clear();
             _eccCorrected = 0;
-            if (n > 0) report.Add($"ECC in {n} Clustern neu geschrieben (korrigierte Daten dauerhaft übernommen).");
+            if (n > 0) report.Add(L.T($"ECC in {n} Clustern neu geschrieben (korrigierte Daten dauerhaft übernommen).", $"ECC rewritten in {n} clusters (corrected data applied permanently)."));
         }
         var s = ScanFileSystem();
         bool damaged = Entries.Any(e => e.Damaged) || s.BrokenChains > 0 || s.CrossLinked > 0;
@@ -683,13 +683,13 @@ public sealed class Ps2Card : MemoryCard
             foreach (var c in s.Lost) SetFat(c, FreeEnd);
             _allocCursor = 0;
             FlushFat();
-            report.Add($"{s.Lost.Count} verlorene Cluster freigegeben (+{s.Lost.Count} KB freier Speicher).");
+            report.Add(L.T($"{s.Lost.Count} verlorene Cluster freigegeben (+{s.Lost.Count} KB freier Speicher).", $"{s.Lost.Count} lost clusters freed (+{s.Lost.Count} KB free space)."));
         }
         else if (s.Lost.Count > 0)
-            report.Add("Verlorene Cluster nicht freigegeben, weil beschädigte Saves existieren (Daten könnten dazugehören).");
+            report.Add(L.T("Verlorene Cluster nicht freigegeben, weil beschädigte Saves existieren (Daten könnten dazugehören).", "Lost clusters not freed because damaged saves exist (the data could belong to them)."));
         if (report.Count > 0)
         {
-            Warnings.RemoveAll(w => w.Contains("Bitfehler"));
+            Warnings.RemoveAll(w => w.Contains(L.T("Bitfehler", "bit error")));
             MarkModified();
             Reload();
         }
@@ -717,7 +717,7 @@ public sealed class Ps2Card : MemoryCard
         allocClusters = fatClusters * epc;
         int allocOffset = firstIfc + ifcCount + fatClusters;
         int allocEnd = (int)gb2 * clustersPerEb - allocOffset;
-        if (allocEnd < 1) throw new ArgumentException("Karte zu klein.");
+        if (allocEnd < 1) throw new ArgumentException(L.T("Karte zu klein.", "Card too small."));
 
         var img = new byte[(long)pagesPerCard * rawPage];
         if (withEcc)

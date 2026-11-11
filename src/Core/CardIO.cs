@@ -24,17 +24,17 @@ public static class CardIO
         }
     }
 
-    public const string OpenFilter =
-        "Alle Memory Cards|*.ps2;*.vm2;*.vmc;*.mc2;*.bin;*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm;*.ps;*.ddf;*.mci;*.psm;*.raw;*.img|" +
-        "PS2-Karten (*.ps2;*.vm2;*.vmc;*.mc2;*.bin)|*.ps2;*.vm2;*.vmc;*.mc2;*.bin|" +
-        "PS1-Karten (*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm)|*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm;*.ps;*.ddf;*.mci;*.psm|" +
-        "Alle Dateien|*.*";
+    public static string OpenFilter =>
+        L.T("Alle Memory Cards", "All memory cards") + "|*.ps2;*.vm2;*.vmc;*.mc2;*.bin;*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm;*.ps;*.ddf;*.mci;*.psm;*.raw;*.img|" +
+        L.T("PS2-Karten", "PS2 cards") + " (*.ps2;*.vm2;*.vmc;*.mc2;*.bin)|*.ps2;*.vm2;*.vmc;*.mc2;*.bin|" +
+        L.T("PS1-Karten", "PS1 cards") + " (*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm)|*.mcr;*.mcd;*.mc;*.gme;*.vgs;*.mem;*.vmp;*.vm1;*.srm;*.ps;*.ddf;*.mci;*.psm|" +
+        L.T("Alle Dateien", "All files") + "|*.*";
 
-    public const string ImportFilter =
-        "Alle Savegames|*.psu;*.max;*.cbs;*.sps;*.xps;*.psv;*.zip;*.mcs;*.psx;*.mcb;*.mcx;*.pda;*.ps1;*.ps2;*.vm2;*.vmc;*.mc2;*.mcr;*.mcd;*.gme;*.vm1;*.vmp|" +
+    public static string ImportFilter =>
+        L.T("Alle Savegames", "All saves") + "|*.psu;*.max;*.cbs;*.sps;*.xps;*.psv;*.zip;*.mcs;*.psx;*.mcb;*.mcx;*.pda;*.ps1;*.ps2;*.vm2;*.vmc;*.mc2;*.mcr;*.mcd;*.gme;*.vm1;*.vmp|" +
         "PS2-Saves (*.psu;*.max;*.cbs;*.sps;*.xps;*.psv;*.zip)|*.psu;*.max;*.cbs;*.sps;*.xps;*.psv;*.zip|" +
         "PS1-Saves (*.mcs;*.psx;*.mcb;*.mcx;*.pda;*.psv;*.ps1)|*.mcs;*.psx;*.mcb;*.mcx;*.pda;*.psv;*.ps1|" +
-        "Alle Dateien|*.*";
+        L.T("Alle Dateien", "All files") + "|*.*";
 
     static string KindFromExtension(string path, Platform p)
     {
@@ -43,24 +43,24 @@ public static class CardIO
             return ext switch
             {
                 ".ps2" => "PCSX2 (.ps2)",
-                ".vm2" => "PS3 virtuelle Karte (.VM2)",
+                ".vm2" => L.T("PS3 virtuelle Karte (.VM2)", "PS3 virtual card (.VM2)"),
                 ".vmc" => "OPL VMC (.vmc)",
                 ".mc2" => "MemCard PRO2 / SD2PSX (.mc2)",
-                ".bin" => "Rohabbild (.bin)",
-                _ => $"PS2-Abbild ({ext})"
+                ".bin" => L.T("Rohabbild (.bin)", "Raw image (.bin)"),
+                _ => L.T($"PS2-Abbild ({ext})", $"PS2 image ({ext})")
             };
         return ext switch
         {
             ".mcr" => "ePSXe/PCSX (.mcr)",
             ".mcd" => "DuckStation/ePSXe (.mcd)",
-            ".mc" => "Rohabbild (.mc)",
+            ".mc" => L.T("Rohabbild (.mc)", "Raw image (.mc)"),
             ".gme" => "DexDrive (.gme)",
             ".vgs" or ".mem" => "VGS/Bleem (.vgs)",
             ".vmp" => "PSP/Vita (.vmp)",
-            ".vm1" => "PS3 virtuelle Karte (.VM1)",
+            ".vm1" => L.T("PS3 virtuelle Karte (.VM1)", "PS3 virtual card (.VM1)"),
             ".srm" => "RetroArch (.srm)",
             ".vmc" => "POPStarter VMC (.vmc)",
-            _ => $"PS1-Abbild ({ext})"
+            _ => L.T($"PS1-Abbild ({ext})", $"PS1 image ({ext})")
         };
     }
 
@@ -70,18 +70,18 @@ public static class CardIO
         if (Directory.Exists(path))
         {
             if (Ps2FolderCard.IsFolderCard(path)) return new Ps2FolderCard(path) { LoadedWriteTimeUtc = Directory.GetLastWriteTimeUtc(path) };
-            throw new InvalidDataException("Der Ordner ist keine PCSX2-Ordner-Memory-Card (_pcsx2_superblock fehlt).");
+            throw new InvalidDataException(L.T("Der Ordner ist keine PCSX2-Ordner-Memory-Card (_pcsx2_superblock fehlt).", "The folder is not a PCSX2 folder memory card (_pcsx2_superblock missing)."));
         }
         var info = new FileInfo(path);
-        if (info.Length > 256L * 1024 * 1024) throw new InvalidDataException("Datei ist zu groß für eine Memory Card.");
+        if (info.Length > 256L * 1024 * 1024) throw new InvalidDataException(L.T("Datei ist zu groß für eine Memory Card.", "File is too large for a memory card."));
         var data = File.ReadAllBytes(path);
         var card = TryOpenBytes(data, path);
         if (card == null)
         {
             var unf = DetectUnformatted(data);
             if (unf != null) throw unf;
-            throw new InvalidDataException("Unbekanntes oder stark beschädigtes Memory-Card-Format. " +
-                                           (ListBackups(path).Count > 0 ? "Für diese Datei gibt es Backups (Datei > Backup wiederherstellen)." : ""));
+            throw new InvalidDataException(L.T("Unbekanntes oder stark beschädigtes Memory-Card-Format. ", "Unknown or badly damaged memory card format. ") +
+                                           (ListBackups(path).Count > 0 ? L.T("Für diese Datei gibt es Backups (Datei > Backup wiederherstellen).", "Backups exist for this file (File > Restore backup).") : ""));
         }
         card.LoadedWriteTimeUtc = info.LastWriteTimeUtc;
         return card;
@@ -123,7 +123,7 @@ public static class CardIO
         SafeWrite(cardPath, bytes, b =>
         {
             if (TryOpenBytes(b, cardPath) == null && DetectUnformatted(b) == null)
-                throw new InvalidDataException("Das Backup ist selbst keine lesbare Memory Card.");
+                throw new InvalidDataException(L.T("Das Backup ist selbst keine lesbare Memory Card.", "The backup itself is not a readable memory card."));
         });
     }
 
@@ -137,8 +137,8 @@ public static class CardIO
     public static (string ext, string filter) NewCardFile(NewCardType t) => t switch
     {
         NewCardType.Ps2Ps3Vm2 => (".VM2", "PS3 VM2 (*.VM2)|*.VM2"),
-        NewCardType.Ps2NoEcc_8 => (".vmc", "OPL VMC (*.vmc)|*.vmc|MemCard PRO2 / SD2PSX (*.mc2)|*.mc2|Rohabbild (*.bin)|*.bin"),
-        NewCardType.Ps1Raw => (".mcr", "PS1 Raw (*.mcr)|*.mcr|DuckStation (*.mcd)|*.mcd|RetroArch (*.srm)|*.srm|Rohabbild (*.mc)|*.mc"),
+        NewCardType.Ps2NoEcc_8 => (".vmc", "OPL VMC (*.vmc)|*.vmc|MemCard PRO2 / SD2PSX (*.mc2)|*.mc2|" + L.T("Rohabbild", "Raw image") + " (*.bin)|*.bin"),
+        NewCardType.Ps1Raw => (".mcr", "PS1 Raw (*.mcr)|*.mcr|DuckStation (*.mcd)|*.mcd|RetroArch (*.srm)|*.srm|" + L.T("Rohabbild", "Raw image") + " (*.mc)|*.mc"),
         NewCardType.Ps1Ps3Vm1 => (".VM1", "PS3 VM1 (*.VM1)|*.VM1"),
         NewCardType.Ps1Gme => (".gme", "DexDrive (*.gme)|*.gme"),
         NewCardType.Ps1Vgs => (".vgs", "VGS (*.vgs)|*.vgs|Bleem (*.mem)|*.mem"),
@@ -148,17 +148,17 @@ public static class CardIO
 
     public static string Describe(NewCardType t) => t switch
     {
-        NewCardType.Ps2Pcsx2_8 => "PS2 – PCSX2 / Standard 8 MB (.ps2, mit ECC)",
+        NewCardType.Ps2Pcsx2_8 => L.T("PS2 – PCSX2 / Standard 8 MB (.ps2, mit ECC)", "PS2 – PCSX2 / standard 8 MB (.ps2, with ECC)"),
         NewCardType.Ps2Pcsx2_16 => "PS2 – PCSX2 16 MB (.ps2)",
         NewCardType.Ps2Pcsx2_32 => "PS2 – PCSX2 32 MB (.ps2)",
         NewCardType.Ps2Pcsx2_64 => "PS2 – PCSX2 64 MB (.ps2)",
-        NewCardType.Ps2Ps3Vm2 => "PS2 – PS3 virtuelle Karte 8 MB (.VM2)",
-        NewCardType.Ps2NoEcc_8 => "PS2 – 8 MB ohne ECC (OPL .vmc / MemCard PRO2 .mc2 / .bin)",
-        NewCardType.Ps1Raw => "PS1 – Rohformat 128 KB (.mcr / .mcd / .srm – ePSXe, DuckStation, RetroArch, PCSX2)",
-        NewCardType.Ps1Ps3Vm1 => "PS1 – PS3 virtuelle Karte (.VM1)",
+        NewCardType.Ps2Ps3Vm2 => L.T("PS2 – PS3 virtuelle Karte 8 MB (.VM2)", "PS2 – PS3 virtual card 8 MB (.VM2)"),
+        NewCardType.Ps2NoEcc_8 => L.T("PS2 – 8 MB ohne ECC (OPL .vmc / MemCard PRO2 .mc2 / .bin)", "PS2 – 8 MB without ECC (OPL .vmc / MemCard PRO2 .mc2 / .bin)"),
+        NewCardType.Ps1Raw => L.T("PS1 – Rohformat 128 KB (.mcr / .mcd / .srm – ePSXe, DuckStation, RetroArch, PCSX2)", "PS1 – raw format 128 KB (.mcr / .mcd / .srm – ePSXe, DuckStation, RetroArch, PCSX2)"),
+        NewCardType.Ps1Ps3Vm1 => L.T("PS1 – PS3 virtuelle Karte (.VM1)", "PS1 – PS3 virtual card (.VM1)"),
         NewCardType.Ps1Gme => "PS1 – DexDrive (.gme)",
         NewCardType.Ps1Vgs => "PS1 – VGS / Bleem (.vgs / .mem)",
-        NewCardType.Ps1Vmp => "PS1 – PSP / PS Vita (SCEVMC0.VMP, signiert)",
+        NewCardType.Ps1Vmp => L.T("PS1 – PSP / PS Vita (SCEVMC0.VMP, signiert)", "PS1 – PSP / PS Vita (SCEVMC0.VMP, signed)"),
         _ => t.ToString()
     };
 
@@ -198,7 +198,7 @@ public static class CardIO
         if (!reread.AsSpan().SequenceEqual(bytes))
         {
             File.Delete(tmp);
-            throw new IOException("Geschriebene Daten stimmen nicht überein – Original bleibt unverändert.");
+            throw new IOException(L.T("Geschriebene Daten stimmen nicht überein – Original bleibt unverändert.", "Written data does not match – the original remains unchanged."));
         }
         if (File.Exists(full))
         {

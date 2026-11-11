@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Imaging;
 using MemcardManager.Core;
+L.Init("de"); // the checks below compare German texts
 if (args.Length == 2 && args[0] == "--verify")
 {
     var d = File.ReadAllBytes(args[1]);
@@ -271,6 +272,44 @@ foreach (var (mb, ecc) in new[] { (8, true), (8, false), (16, true) })
     var blank = new byte[8650752]; Array.Fill(blank, (byte)0xFF);
     var unf = CardIO.DetectUnformatted(blank);
     Check(unf != null && unf.SizeMb == 8 && unf.Ecc && CardIO.TryOpenBytes(CardIO.FormatLike(unf), "x.ps2") != null, "Unformatierte 8-MB-Karte erkannt & formatierbar");
+}
+
+// rescue import of truncated save files
+{
+    var ps1 = new SaveGame { Ps1 = MakePs1Save("BESLES-99999RESC", 3) };
+    var cases = new (string name, byte[] bytes, SaveGame orig)[]
+    {
+        ("psu", SaveFormats.ExportBytes(psu, ExportFormat.Psu), psu),
+        ("max", SaveFormats.ExportBytes(psu, ExportFormat.Max), psu),
+        ("cbs", SaveFormats.ExportBytes(psu, ExportFormat.Cbs), psu),
+        ("psv", SaveFormats.ExportBytes(psu, ExportFormat.Psv), psu),
+        ("mcs", SaveFormats.ExportBytes(ps1, ExportFormat.Mcs), ps1),
+        ("psx", SaveFormats.ExportBytes(ps1, ExportFormat.ActionReplay), ps1),
+    };
+    foreach (var (name, bytes, orig) in cases)
+    {
+        var cut = bytes.AsSpan(0, (int)(bytes.Length * 0.6)).ToArray();
+        bool normalFails;
+        try { SaveFormats.LoadSingle(cut, "x." + name); normalFails = false; } catch { normalFails = true; }
+        SaveGame? r = null;
+        string err = "";
+        try { r = SaveFormats.LoadSingle(cut, "x." + name, new SaveFormats.Rescue()); } catch (Exception ex) { err = ex.Message; }
+        bool prefixOk = false;
+        if (r?.Ps2 != null && r.Ps2.Files.Count > 0)
+        {
+            var f0 = r.Ps2.Files[0]; var o0 = orig.Ps2!.Find(f0.Name)!;
+            int n = Math.Min(4096, Math.Min(f0.Data.Length, o0.Data.Length));
+            prefixOk = f0.Data.AsSpan(0, n).SequenceEqual(o0.Data.AsSpan(0, n));
+        }
+        else if (r?.Ps1 != null) prefixOk = r.Ps1.Data.AsSpan(0, 8192).SequenceEqual(orig.Ps1!.Data.AsSpan(0, 8192));
+        Check(normalFails && r != null && r.Damaged && prefixOk && r.Problem!.StartsWith(SaveFormats.RescueTag),
+            $"Rettungsimport {name}: normal abgelehnt={normalFails}, gerettet={(r != null)} {(r?.Ps2?.Files.Count ?? r?.Ps1?.Blocks)} Teile – {r?.Problem ?? err}");
+    }
+    // rescued saves can be imported onto a card
+    var rc = new Ps2Card(Ps2Card.Format(8, true), "r.ps2", "t");
+    var rescued = SaveFormats.LoadSingle(SaveFormats.ExportBytes(psu, ExportFormat.Psu).AsSpan(0, 400000).ToArray(), "x.psu", new SaveFormats.Rescue());
+    rc.Import(rescued);
+    Check(rc.Entries.Count == 1 && rc.Check().Count == 0, "Geretteter Save auf Karte importiert, Karte konsistent");
 }
 
 // LZARI raw roundtrips

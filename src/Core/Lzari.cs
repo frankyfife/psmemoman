@@ -321,25 +321,44 @@ internal sealed class Lzari
     public static byte[] Decode(byte[] src, int outLength)
     {
         var z = new Lzari { _in = src };
-        return z.DecodeImpl(outLength);
+        var output = new byte[outLength];
+        z.DecodeImpl(output);
+        return output;
     }
 
-    byte[] DecodeImpl(int outLength)
+    /// <summary>Decodes as far as the (possibly damaged) input allows; the rest of the output stays zero.</summary>
+    public static byte[] DecodePartial(byte[] src, int outLength, out int produced)
     {
+        var z = new Lzari { _in = src };
         var output = new byte[outLength];
-        if (outLength == 0) return output;
+        try { z.DecodeImpl(output); }
+        catch { /* damaged stream: keep what was decoded */ }
+        produced = z._validCount >= 0 ? Math.Min(z._validCount, z._count) : z._count;
+        Array.Clear(output, produced, outLength - produced); // drop guesswork after the damage
+        return output;
+    }
+
+    int _count, _validCount = -1;
+
+    void DecodeImpl(byte[] output)
+    {
+        int outLength = output.Length;
+        if (outLength == 0) return;
         for (int i = 0; i < M + 2; i++) _value = 2 * _value + GetBit();
         StartModel();
         for (int i = 0; i < N - F; i++) _text[i] = (byte)' ';
         int r = N - F;
-        int count = 0;
-        while (count < outLength)
+        _count = 0;
+        _validCount = -1;
+        while (_count < outLength)
         {
-            if (_inPos > _in.Length + 16) throw new InvalidDataException("MAX-Daten sind beschädigt (LZARI).");
+            // input exhausted: everything decoded from here on is guesswork
+            if (_inPos > _in.Length + 3 && _validCount < 0) _validCount = _count;
+            if (_inPos > _in.Length + 16) throw new InvalidDataException(L.T("MAX-Daten sind beschädigt (LZARI).", "MAX data is damaged (LZARI)."));
             int c = DecodeChar();
             if (c < 256)
             {
-                output[count++] = (byte)c;
+                output[_count++] = (byte)c;
                 _text[r++] = (byte)c;
                 r &= N - 1;
             }
@@ -347,15 +366,14 @@ internal sealed class Lzari
             {
                 int i = (r - DecodePosition() - 1) & (N - 1);
                 int j = c - 255 + Threshold;
-                for (int k = 0; k < j && count < outLength; k++)
+                for (int k = 0; k < j && _count < outLength; k++)
                 {
                     byte b = _text[(i + k) & (N - 1)];
-                    output[count++] = b;
+                    output[_count++] = b;
                     _text[r++] = b;
                     r &= N - 1;
                 }
             }
         }
-        return output;
     }
 }

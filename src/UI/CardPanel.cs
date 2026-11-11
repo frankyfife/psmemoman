@@ -62,31 +62,32 @@ public sealed class CardPanel : Panel
         _close.ForeColor = Theme.Dim;
         _close.BackColor = Theme.Header;
         _close.Click += (_, _) => _host.ClosePanel(this);
-        _tip.SetToolTip(_close, "Karte schließen (Segment ausblenden)");
+        _tip.SetToolTip(_close, L.T("Karte schließen (Segment ausblenden)", "Close card (hide segment)"));
         _header.Controls.Add(_close);
         _header.Resize += (_, _) => _close.Location = new Point(_header.Width - _close.Width - Dpi.S(6), Dpi.S(6));
 
         // toolbar
         _tools.Renderer = Theme.ToolRenderer;
         _tools.BackColor = Theme.Header;
-        _btnImport = new ToolStripButton("⭳ Importieren", null, (_, _) => ImportDialog()) { ToolTipText = "Savegames aus Dateien importieren (PSU, MAX, CBS, SPS, XPS, PSV, MCS, PSX, ZIP, Karten …)" };
-        _btnExport = new ToolStripButton("⭱ Exportieren", null, (_, _) => ExportSelected()) { ToolTipText = "Ausgewählte Savegames exportieren" };
-        _btnDelete = new ToolStripButton("🗑 Löschen", null, (_, _) => DeleteSelected()) { ToolTipText = "Ausgewählte Savegames löschen (Entf)" };
-        _btnSave = new ToolStripButton("💾 Speichern", null, (_, _) => Save()) { ToolTipText = "Änderungen in die Kartendatei schreiben (mit automatischem Backup)" };
-        _btnMore = new ToolStripDropDownButton("⋯") { ToolTipText = "Weitere Aktionen", ShowDropDownArrow = false };
-        _btnMore.DropDownItems.Add("Speichern unter / konvertieren …", null, (_, _) => SaveAs());
-        _btnMore.DropDownItems.Add("Änderungen verwerfen (neu laden)", null, (_, _) => Revert());
+        _btnImport = new ToolStripButton(L.T("⭳ Importieren", "⭳ Import"), null, (_, _) => ImportDialog()) { ToolTipText = L.T("Savegames aus Dateien importieren (PSU, MAX, CBS, SPS, XPS, PSV, MCS, PSX, ZIP, Karten …)", "Import saves from files (PSU, MAX, CBS, SPS, XPS, PSV, MCS, PSX, ZIP, cards …)") };
+        _btnExport = new ToolStripButton(L.T("⭱ Exportieren", "⭱ Export"), null, (_, _) => ExportSelected()) { ToolTipText = L.T("Ausgewählte Savegames exportieren", "Export selected saves") };
+        _btnDelete = new ToolStripButton(L.T("🗑 Löschen", "🗑 Delete"), null, (_, _) => DeleteSelected()) { ToolTipText = L.T("Ausgewählte Savegames löschen (Entf)", "Delete selected saves (Del)") };
+        _btnSave = new ToolStripButton(L.T("💾 Speichern", "💾 Save"), null, (_, _) => Save()) { ToolTipText = L.T("Änderungen in die Kartendatei schreiben (mit automatischem Backup)", "Write changes to the card file (with automatic backup)") };
+        _btnMore = new ToolStripDropDownButton("⋯") { ToolTipText = L.T("Weitere Aktionen", "More actions"), ShowDropDownArrow = false };
+        _btnMore.DropDownItems.Add(L.T("Speichern unter / konvertieren …", "Save as / convert …"), null, (_, _) => SaveAs());
+        _btnMore.DropDownItems.Add(L.T("Änderungen verwerfen (neu laden)", "Discard changes (reload)"), null, (_, _) => Revert());
         _btnMore.DropDownItems.Add(new ToolStripSeparator());
-        _btnMore.DropDownItems.Add("Ordner importieren …", null, (_, _) => ImportFolderDialog());
-        _btnMore.DropDownItems.Add("Alle auswählen", null, (_, _) => List.SelectAll());
-        _btnMore.DropDownItems.Add("Alle Savegames exportieren …", null, (_, _) => { List.SelectAll(); ExportSelected(); });
+        _btnMore.DropDownItems.Add(L.T("Ordner importieren …", "Import folder …"), null, (_, _) => ImportFolderDialog());
+        _btnMore.DropDownItems.Add(L.T("Rettungsimport (beschädigte Dateien, ohne Gewähr) …", "Rescue import (damaged files, no guarantee) …"), null, (_, _) => RescueImportDialog());
+        _btnMore.DropDownItems.Add(L.T("Alle auswählen", "Select all"), null, (_, _) => List.SelectAll());
+        _btnMore.DropDownItems.Add(L.T("Alle Savegames exportieren …", "Export all saves …"), null, (_, _) => { List.SelectAll(); ExportSelected(); });
         _btnMore.DropDownItems.Add(new ToolStripSeparator());
-        _btnMore.DropDownItems.Add("Karte prüfen / reparieren …", null, (_, _) => CheckCard());
-        _btnMore.DropDownItems.Add("Gelöschte Savegames wiederherstellen …", null, (_, _) => UndeleteSaves());
-        _btnMore.DropDownItems.Add("Backup zurückspielen …", null, (_, _) => RestoreBackup());
-        _btnMore.DropDownItems.Add("Im Explorer zeigen", null, (_, _) => ShowInExplorer());
+        _btnMore.DropDownItems.Add(L.T("Karte prüfen / reparieren …", "Check / repair card …"), null, (_, _) => CheckCard());
+        _btnMore.DropDownItems.Add(L.T("Gelöschte Savegames wiederherstellen …", "Restore deleted saves …"), null, (_, _) => UndeleteSaves());
+        _btnMore.DropDownItems.Add(L.T("Backup zurückspielen …", "Restore backup …"), null, (_, _) => RestoreBackup());
+        _btnMore.DropDownItems.Add(L.T("Im Explorer zeigen", "Show in Explorer"), null, (_, _) => ShowInExplorer());
         _btnMore.DropDownItems.Add(new ToolStripSeparator());
-        _btnMore.DropDownItems.Add("Karte schließen", null, (_, _) => _host.ClosePanel(this));
+        _btnMore.DropDownItems.Add(L.T("Karte schließen", "Close card"), null, (_, _) => _host.ClosePanel(this));
         Theme.StyleMenu(_btnMore.DropDown);
         _tools.Items.AddRange(new ToolStripItem[] { _btnImport, _btnExport, _btnDelete, new ToolStripSeparator(), _btnSave, _btnMore });
 
@@ -98,11 +99,11 @@ public sealed class CardPanel : Panel
         _banner.BackColor = Color.FromArgb(70, 58, 25);
         var bannerText = new Label
         {
-            Text = "● Ungespeicherte Änderungen – die Kartendatei ist noch unverändert.", AutoSize = false, Dock = DockStyle.Fill,
+            Text = L.T("● Ungespeicherte Änderungen – die Kartendatei ist noch unverändert.", "● Unsaved changes – the card file is still unchanged."), AutoSize = false, Dock = DockStyle.Fill,
             ForeColor = Theme.Warn, TextAlign = ContentAlignment.MiddleLeft, Padding = Dpi.S(new Padding(8, 0, 0, 0))
         };
-        var bSave = BannerButton("Speichern", (_, _) => Save());
-        var bRevert = BannerButton("Verwerfen", (_, _) => Revert());
+        var bSave = BannerButton(L.T("Speichern", "Save"), (_, _) => Save());
+        var bRevert = BannerButton(L.T("Verwerfen", "Discard"), (_, _) => Revert());
         var flow = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Padding = Dpi.S(new Padding(0, 3, 6, 0)), WrapContents = false };
         flow.Controls.Add(bSave);
         flow.Controls.Add(bRevert);
@@ -166,13 +167,13 @@ public sealed class CardPanel : Panel
         TextRenderer.DrawText(g, title, Theme.Title, new Rectangle(x, y, right - x, th), Theme.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         // health badge (click → check / repair dialog)
         int errors = _issues.Count(i => i.Level == IssueLevel.Error), warns = _issues.Count(i => i.Level == IssueLevel.Warning);
-        var (wt, wc) = errors > 0 ? ($"✖ {errors} Fehler", Theme.Danger)
-                     : warns > 0 ? ($"⚠ {warns} Warnung{(warns == 1 ? "" : "en")}", Theme.Warn)
+        var (wt, wc) = errors > 0 ? (L.T($"✖ {errors} Fehler", $"✖ {errors} error{(errors == 1 ? "" : "s")}"), Theme.Danger)
+                     : warns > 0 ? (L.T($"⚠ {warns} Warnung{(warns == 1 ? "" : "en")}", $"⚠ {warns} warning{(warns == 1 ? "" : "s")}"), Theme.Warn)
                      : ("✔ OK", Theme.Ok);
         int warnW = TextRenderer.MeasureText(wt, Theme.Small).Width + Dpi.S(14);
         _warnRect = new Rectangle(right - warnW, y + th + Dpi.S(2), warnW, sh);
         TextRenderer.DrawText(g, wt, Theme.Small, _warnRect, wc, TextFormatFlags.HorizontalCenter);
-        string sub = Card.FormatName + (Card.CanWrite ? "" : "  ·  NUR LESEN");
+        string sub = Card.FormatName + (Card.CanWrite ? "" : L.T("  ·  NUR LESEN", "  ·  READ ONLY"));
         TextRenderer.DrawText(g, sub, Theme.Small, new Rectangle(x, y + th + Dpi.S(2), right - x - warnW, sh),
             Card.CanWrite ? Theme.Dim : Theme.Warn, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
@@ -182,8 +183,8 @@ public sealed class CardPanel : Panel
         var g = e.Graphics;
         long total = Math.Max(1, Card.TotalBytes), free = Card.FreeBytes, used = total - free;
         string txt = Card.Platform == Platform.PS1
-            ? $"{free / Ps1Card.BlockSize} von 15 Blöcken frei · {Card.Entries.Count} Saves"
-            : $"{free / 1024:#,0} KB frei von {total / 1024:#,0} KB · {Card.Entries.Count} Saves";
+            ? L.T($"{free / Ps1Card.BlockSize} von 15 Blöcken frei · {Card.Entries.Count} Saves", $"{free / Ps1Card.BlockSize} of 15 blocks free · {Card.Entries.Count} save{(Card.Entries.Count == 1 ? "" : "s")}")
+            : L.T($"{free / 1024:#,0} KB frei von {total / 1024:#,0} KB · {Card.Entries.Count} Saves", $"{free / 1024:#,0} KB free of {total / 1024:#,0} KB · {Card.Entries.Count} save{(Card.Entries.Count == 1 ? "" : "s")}");
         int tw = TextRenderer.MeasureText(txt, Theme.Small).Width;
         int barW = Math.Max(Dpi.S(40), _usage.Width - tw - Dpi.S(30));
         var bar = new Rectangle(Dpi.S(10), (_usage.Height - Dpi.S(10)) / 2, barW, Dpi.S(10));
@@ -202,11 +203,11 @@ public sealed class CardPanel : Panel
     public void RefreshView()
     {
         try { _issues = Card.Diagnose(); }
-        catch (Exception ex) { _issues = new List<CardIssue> { new(IssueLevel.Error, "Prüfung fehlgeschlagen: " + ex.Message) }; }
+        catch (Exception ex) { _issues = new List<CardIssue> { new(IssueLevel.Error, L.T("Prüfung fehlgeschlagen: ", "Check failed: ") + ex.Message) }; }
         List.SetItems(Card.Entries.OrderBy(e => e.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(e => e.Name));
         List.EmptyText = Card.CanWrite
-            ? "Keine Savegames auf dieser Karte.\n\nSavegames oder Karten hierher ziehen\noder über „Importieren“ hinzufügen."
-            : "Keine Savegames auf dieser Karte.";
+            ? L.T("Keine Savegames auf dieser Karte.\n\nSavegames oder Karten hierher ziehen\noder über „Importieren“ hinzufügen.", "No saves on this card.\n\nDrag saves or cards here\nor add them via \"Import\".")
+            : L.T("Keine Savegames auf dieser Karte.", "No saves on this card.");
         _banner.Visible = Card.IsModified;
         _header.Invalidate();
         _usage.Invalidate();
@@ -239,13 +240,13 @@ public sealed class CardPanel : Panel
         var sel = List.SelectedItems;
         if (sel.Count == 0)
         {
-            _ctx.Items.Add("Importieren …", null, (_, _) => ImportDialog()).Enabled = Card.CanWrite;
-            _ctx.Items.Add("Alle auswählen", null, (_, _) => List.SelectAll());
+            _ctx.Items.Add(L.T("Importieren …", "Import …"), null, (_, _) => ImportDialog()).Enabled = Card.CanWrite;
+            _ctx.Items.Add(L.T("Alle auswählen", "Select all"), null, (_, _) => List.SelectAll());
             return;
         }
-        if (sel.Count == 1) _ctx.Items.Add("Eigenschaften …", null, (_, _) => ShowProperties(sel[0])).Font = new Font(Theme.Normal, FontStyle.Bold);
-        _ctx.Items.Add("Exportieren …", null, (_, _) => ExportSelected());
-        var quick = new ToolStripMenuItem("Schnell exportieren als");
+        if (sel.Count == 1) _ctx.Items.Add(L.T("Eigenschaften …", "Properties …"), null, (_, _) => ShowProperties(sel[0])).Font = new Font(Theme.Normal, FontStyle.Bold);
+        _ctx.Items.Add(L.T("Exportieren …", "Export …"), null, (_, _) => ExportSelected());
+        var quick = new ToolStripMenuItem(L.T("Schnell exportieren als", "Quick export as"));
         foreach (var f in SaveFormats.FormatsFor(Card.Platform))
         {
             var fmt = f;
@@ -256,8 +257,8 @@ public sealed class CardPanel : Panel
         var others = _host.Panels.Where(p => p != this && p.Card.Platform == Card.Platform).ToList();
         if (others.Count > 0)
         {
-            var copy = new ToolStripMenuItem("Kopieren nach");
-            var move = new ToolStripMenuItem("Verschieben nach");
+            var copy = new ToolStripMenuItem(L.T("Kopieren nach", "Copy to"));
+            var move = new ToolStripMenuItem(L.T("Verschieben nach", "Move to"));
             foreach (var o in others)
             {
                 var target = o;
@@ -270,8 +271,8 @@ public sealed class CardPanel : Panel
             _ctx.Items.Add(move);
         }
         _ctx.Items.Add(new ToolStripSeparator());
-        _ctx.Items.Add("Umbenennen / Region ändern …", null, (_, _) => RenameEntry(sel[0])).Enabled = sel.Count == 1 && Card.CanWrite;
-        _ctx.Items.Add("Löschen", null, (_, _) => DeleteSelected()).Enabled = Card.CanWrite;
+        _ctx.Items.Add(L.T("Umbenennen / Region ändern …", "Rename / change region …"), null, (_, _) => RenameEntry(sel[0])).Enabled = sel.Count == 1 && Card.CanWrite;
+        _ctx.Items.Add(L.T("Löschen", "Delete"), null, (_, _) => DeleteSelected()).Enabled = Card.CanWrite;
     }
 
     // ================================================================== drag & drop
@@ -342,17 +343,17 @@ public sealed class CardPanel : Panel
         }
         if (others.Count > 0)
         {
-            if (!Card.CanWrite) { MessageBox.Show(this, Card.ReadOnlyReason, "Nur lesen", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+            if (!Card.CanWrite) { MessageBox.Show(this, Card.ReadOnlyReason, L.T("Nur lesen", "Read only"), MessageBoxButtons.OK, MessageBoxIcon.Information); }
             else ImportPaths(others);
         }
         if (cards.Count == 0) return;
         var menu = new ContextMenuStrip();
         Theme.StyleMenu(menu);
-        string what = cards.Count == 1 ? $"„{Path.GetFileName(cards[0].TrimEnd('\\'))}“" : $"{cards.Count} Karten";
-        menu.Items.Add(new ToolStripLabel($"{what} ist eine Memory Card:") { ForeColor = Theme.Dim });
-        menu.Items.Add("Als eigene Karte öffnen (neues Segment)", null, (_, _) => _host.OpenCards(cards));
-        menu.Items.Add("Savegames daraus in diese Karte importieren", null, (_, _) => ImportPaths(cards)).Enabled = Card.CanWrite;
-        menu.Items.Add("Abbrechen");
+        string what = cards.Count == 1 ? L.T($"„{Path.GetFileName(cards[0].TrimEnd('\\'))}“", $"\"{Path.GetFileName(cards[0].TrimEnd('\\'))}\"") : L.T($"{cards.Count} Karten", $"{cards.Count} cards");
+        menu.Items.Add(new ToolStripLabel(cards.Count == 1 ? L.T($"{what} ist eine Memory Card:", $"{what} is a memory card:") : L.T($"{what} ist eine Memory Card:", $"{what} are memory cards:")) { ForeColor = Theme.Dim });
+        menu.Items.Add(L.T("Als eigene Karte öffnen (neues Segment)", "Open as separate card (new segment)"), null, (_, _) => _host.OpenCards(cards));
+        menu.Items.Add(L.T("Savegames daraus in diese Karte importieren", "Import its saves into this card"), null, (_, _) => ImportPaths(cards)).Enabled = Card.CanWrite;
+        menu.Items.Add(L.T("Abbrechen", "Cancel"));
         menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
         menu.Show(screen);
     }
@@ -394,10 +395,10 @@ public sealed class CardPanel : Panel
             foreach (var it in items) files.Add(SaveFormats.ExportTo(it.Save, fmt, dir));
             data.SetFileDropList(files);
         }
-        catch (Exception ex) { _host.SetStatus("Drag-Export fehlgeschlagen: " + ex.Message, true); }
+        catch (Exception ex) { _host.SetStatus(L.T("Drag-Export fehlgeschlagen: ", "Drag export failed: ") + ex.Message, true); }
         _host.SetStatus(items.Count == 1
-            ? $"Ziehe „{items[0].Title}“ – auf eine andere Karte (Umschalt = verschieben) oder in den Explorer."
-            : $"Ziehe {items.Count} Savegames – auf eine andere Karte (Umschalt = verschieben) oder in den Explorer.");
+            ? L.T($"Ziehe „{items[0].Title}“ – auf eine andere Karte (Umschalt = verschieben) oder in den Explorer.", $"Dragging \"{items[0].Title}\" – onto another card (Shift = move) or into Explorer.")
+            : L.T($"Ziehe {items.Count} Savegames – auf eine andere Karte (Umschalt = verschieben) oder in den Explorer.", $"Dragging {items.Count} saves – onto another card (Shift = move) or into Explorer."));
         List.DoDragDrop(data, DragDropEffects.Copy | DragDropEffects.Move);
     }
 
@@ -416,7 +417,7 @@ public sealed class CardPanel : Panel
         if (!Card.CanWrite) return;
         using var ofd = new OpenFileDialog
         {
-            Title = "Savegames importieren", Filter = CardIO.ImportFilter, Multiselect = true,
+            Title = L.T("Savegames importieren", "Import saves"), Filter = CardIO.ImportFilter, Multiselect = true,
             InitialDirectory = Directory.Exists(_host.Settings.LastImportDir) ? _host.Settings.LastImportDir : ""
         };
         if (ofd.ShowDialog(this) != DialogResult.OK) return;
@@ -429,7 +430,7 @@ public sealed class CardPanel : Panel
         if (!Card.CanWrite) return;
         using var fb = new FolderBrowserDialog
         {
-            Description = "Ordner mit einem PS2-Save (icon.sys …) oder mit Savegame-Dateien wählen", UseDescriptionForTitle = true,
+            Description = L.T("Ordner mit einem PS2-Save (icon.sys …) oder mit Savegame-Dateien wählen", "Choose a folder with a PS2 save (icon.sys …) or with save files"), UseDescriptionForTitle = true,
             SelectedPath = _host.Settings.LastImportDir
         };
         if (fb.ShowDialog(this) != DialogResult.OK) return;
@@ -437,10 +438,11 @@ public sealed class CardPanel : Panel
         ImportPaths(new List<string> { fb.SelectedPath });
     }
 
-    public void ImportPaths(List<string> paths)
+    public void ImportPaths(List<string> paths, bool rescue = false)
     {
         var saves = new List<SaveGame>();
         var warnings = new List<string>();
+        var failed = new List<string>();
         Cursor = Cursors.WaitCursor;
         try
         {
@@ -448,33 +450,75 @@ public sealed class CardPanel : Panel
             {
                 try
                 {
-                    var loaded = SaveFormats.LoadAny(p, warnings);
-                    if (loaded.Count == 0) warnings.Add($"{Path.GetFileName(p)}: keine Savegames gefunden.");
+                    var loaded = SaveFormats.LoadAny(p, warnings, rescue ? new SaveFormats.Rescue() : null);
+                    if (loaded.Count == 0) warnings.Add(L.T($"{Path.GetFileName(p)}: keine Savegames gefunden.", $"{Path.GetFileName(p)}: no saves found."));
                     saves.AddRange(loaded);
                 }
-                catch (Exception ex) { warnings.Add($"{Path.GetFileName(p)}: {ex.Message}"); }
+                catch (Exception ex)
+                {
+                    warnings.Add($"{Path.GetFileName(p)}: {ex.Message}");
+                    if (!rescue && File.Exists(p)) failed.Add(p);
+                }
             }
         }
         finally { Cursor = Cursors.Default; }
+
+        if (failed.Count > 0 && Card.CanWrite)
+        {
+            var q = MessageBox.Show(this,
+                L.T($"{failed.Count} Datei(en) sind beschädigt oder unvollständig:\n", $"{failed.Count} file(s) are damaged or incomplete:\n") +
+                string.Join("\n", failed.Take(8).Select(f => "  • " + Path.GetFileName(f))) + (failed.Count > 8 ? "\n  …" : "") +
+                L.T("\n\nRettungsimport versuchen? Dabei wird übernommen, was lesbar ist; fehlende Teile werden mit Nullen aufgefüllt.\n" +
+                    "OHNE GEWÄHR: Ob das Spiel den Stand lädt, ist ungewiss. Die Saves werden rot als „Rettungsimport“ markiert.",
+                    "\n\nTry a rescue import? Whatever is readable will be taken over; missing parts are filled with zeros.\n" +
+                    "NO GUARANTEE: It is uncertain whether the game will load the save. The saves are marked red as \"rescue import\"."),
+                L.T("Rettungsimport", "Rescue import"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (q == DialogResult.Yes)
+            {
+                foreach (var p in failed)
+                {
+                    try
+                    {
+                        saves.AddRange(SaveFormats.LoadAny(p, warnings, new SaveFormats.Rescue()));
+                        warnings.RemoveAll(w => w.StartsWith(Path.GetFileName(p) + ":"));
+                    }
+                    catch (Exception ex) { warnings.Add(L.T($"{Path.GetFileName(p)}: auch der Rettungsimport ist gescheitert – {ex.Message}", $"{Path.GetFileName(p)}: the rescue import failed as well – {ex.Message}")); }
+                }
+            }
+        }
         ImportSaves(saves, null, warnings);
+    }
+
+    void RescueImportDialog()
+    {
+        if (!Card.CanWrite) return;
+        using var ofd = new OpenFileDialog
+        {
+            Title = L.T("Rettungsimport – beschädigte Savegame-Dateien (ohne Gewähr)", "Rescue import – damaged save files (no guarantee)"), Filter = CardIO.ImportFilter, Multiselect = true,
+            InitialDirectory = Directory.Exists(_host.Settings.LastImportDir) ? _host.Settings.LastImportDir : ""
+        };
+        if (ofd.ShowDialog(this) != DialogResult.OK) return;
+        _host.Settings.LastImportDir = Path.GetDirectoryName(ofd.FileNames[0]) ?? "";
+        ImportPaths(ofd.FileNames.ToList(), true);
     }
 
     enum Conflict { Overwrite, Skip, Cancel }
 
     Conflict AskConflict(SaveGame incoming, CardEntry existing, out bool forAll)
     {
-        var overwrite = new TaskDialogButton("Ersetzen");
-        var skip = new TaskDialogButton("Überspringen");
+        var overwrite = new TaskDialogButton(L.T("Ersetzen", "Replace"));
+        var skip = new TaskDialogButton(L.T("Überspringen", "Skip"));
         var cancel = TaskDialogButton.Cancel;
         var page = new TaskDialogPage
         {
-            Caption = "Savegame existiert bereits",
-            Heading = $"„{existing.Name}“ ist bereits auf {Card.DisplayName}.",
-            Text = $"Vorhanden:  {existing.Title}  ({Theme.FormatSize(existing.Size)}{(existing.Modified is { } m ? ", " + m.ToString("dd.MM.yyyy HH:mm") : "")})\n" +
-                   $"Neu:            {incoming.Title}  ({Theme.FormatSize(incoming.Size)})\n\n" +
-                   "Beim Ersetzen wird der vorhandene Save überschrieben. Vor dem Speichern der Karte wird automatisch ein Backup der Kartendatei angelegt.",
+            Caption = L.T("Savegame existiert bereits", "Save already exists"),
+            Heading = L.T($"„{existing.Name}“ ist bereits auf {Card.DisplayName}.", $"\"{existing.Name}\" is already on {Card.DisplayName}."),
+            Text = L.T("Vorhanden:  ", "Existing:  ") + $"{existing.Title}  ({Theme.FormatSize(existing.Size)}{(existing.Modified is { } m ? ", " + m.ToString("dd.MM.yyyy HH:mm") : "")})\n" +
+                   L.T("Neu:            ", "New:            ") + $"{incoming.Title}  ({Theme.FormatSize(incoming.Size)})\n\n" +
+                   L.T("Beim Ersetzen wird der vorhandene Save überschrieben. Vor dem Speichern der Karte wird automatisch ein Backup der Kartendatei angelegt.",
+                       "Replacing overwrites the existing save. Before the card is saved, a backup of the card file is created automatically."),
             Icon = TaskDialogIcon.Warning,
-            Verification = new TaskDialogVerificationCheckBox("Für alle weiteren Konflikte übernehmen"),
+            Verification = new TaskDialogVerificationCheckBox(L.T("Für alle weiteren Konflikte übernehmen", "Apply to all further conflicts")),
             Buttons = { overwrite, skip, cancel },
             DefaultButton = skip
         };
@@ -493,7 +537,7 @@ public sealed class CardPanel : Panel
         var errors = new List<string>(warnings ?? new List<string>());
         if (!Card.CanWrite)
         {
-            MessageBox.Show(this, Card.ReadOnlyReason, "Nur lesen", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, Card.ReadOnlyReason, L.T("Nur lesen", "Read only"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             return done;
         }
         int imported = 0, replaced = 0, identical = 0, skipped = 0;
@@ -503,7 +547,8 @@ public sealed class CardPanel : Panel
         {
             if (save.Platform != Card.Platform)
             {
-                errors.Add($"{save.Name}: {(save.Platform == Platform.PS1 ? "PS1" : "PS2")}-Savegame passt nicht auf eine {(Card.Platform == Platform.PS1 ? "PS1" : "PS2")}-Karte.");
+                errors.Add(L.T($"{save.Name}: {(save.Platform == Platform.PS1 ? "PS1" : "PS2")}-Savegame passt nicht auf eine {(Card.Platform == Platform.PS1 ? "PS1" : "PS2")}-Karte.",
+                               $"{save.Name}: a {(save.Platform == Platform.PS1 ? "PS1" : "PS2")} save does not fit on a {(Card.Platform == Platform.PS1 ? "PS1" : "PS2")} card."));
                 continue;
             }
             try
@@ -527,7 +572,7 @@ public sealed class CardPanel : Panel
                 if (decision == Conflict.Skip) { skipped++; continue; }
                 if (Card.SpaceNeeded(save) > Card.FreeBytes + existing.Size)
                 {
-                    errors.Add($"{save.Name}: nicht genug Platz zum Ersetzen.");
+                    errors.Add(L.T($"{save.Name}: nicht genug Platz zum Ersetzen.", $"{save.Name}: not enough space to replace."));
                     continue;
                 }
                 var old = existing.Save;
@@ -546,14 +591,15 @@ public sealed class CardPanel : Panel
             }
             if (Card.SpaceNeeded(save) > Card.FreeBytes)
             {
-                errors.Add($"{save.Name} ({save.Title}): nicht genug Platz – benötigt {Theme.FormatSize(Card.SpaceNeeded(save))}, frei {Theme.FormatSize(Card.FreeBytes)}.");
+                errors.Add(L.T($"{save.Name} ({save.Title}): nicht genug Platz – benötigt {Theme.FormatSize(Card.SpaceNeeded(save))}, frei {Theme.FormatSize(Card.FreeBytes)}.",
+                               $"{save.Name} ({save.Title}): not enough space – needs {Theme.FormatSize(Card.SpaceNeeded(save))}, free {Theme.FormatSize(Card.FreeBytes)}."));
                 continue;
             }
             try
             {
                 Card.Import(save.Clone());
                 imported++;
-                if (save.Damaged) errors.Add($"{save.Name}: übernommen, aber beschädigt ({save.Problem}).");
+                if (save.Damaged) errors.Add(L.T($"{save.Name}: übernommen, aber beschädigt ({save.Problem}).", $"{save.Name}: imported, but damaged ({save.Problem})."));
                 done.Add(save);
                 names.Add(save.Name);
             }
@@ -561,16 +607,16 @@ public sealed class CardPanel : Panel
         }
         AfterChange(names);
         var parts = new List<string>();
-        if (imported > 0) parts.Add($"{imported} importiert");
-        if (replaced > 0) parts.Add($"{replaced} ersetzt");
-        if (identical > 0) parts.Add($"{identical} bereits identisch vorhanden");
-        if (skipped > 0) parts.Add($"{skipped} übersprungen");
-        if (errors.Count > 0) parts.Add($"{errors.Count} Fehler");
-        _host.SetStatus($"Slot {Slot}: " + (parts.Count > 0 ? string.Join(", ", parts) : "nichts importiert") +
-                        (Card.IsModified && !_host.Settings.AutoSave ? " – zum Übernehmen „Speichern“ klicken." : ""), errors.Count > 0);
+        if (imported > 0) parts.Add(L.T($"{imported} importiert", $"{imported} imported"));
+        if (replaced > 0) parts.Add(L.T($"{replaced} ersetzt", $"{replaced} replaced"));
+        if (identical > 0) parts.Add(L.T($"{identical} bereits identisch vorhanden", $"{identical} already present (identical)"));
+        if (skipped > 0) parts.Add(L.T($"{skipped} übersprungen", $"{skipped} skipped"));
+        if (errors.Count > 0) parts.Add(L.T($"{errors.Count} Fehler", $"{errors.Count} error(s)"));
+        _host.SetStatus($"Slot {Slot}: " + (parts.Count > 0 ? string.Join(", ", parts) : L.T("nichts importiert", "nothing imported")) +
+                        (Card.IsModified && !_host.Settings.AutoSave ? L.T(" – zum Übernehmen „Speichern“ klicken.", " – click \"Save\" to apply.") : ""), errors.Count > 0);
         if (errors.Count > 0)
         {
-            using var dlg = new TextReportDialog("Import – Hinweise", string.Join(Environment.NewLine, errors));
+            using var dlg = new TextReportDialog(L.T("Import – Hinweise", "Import – notes"), string.Join(Environment.NewLine, errors));
             dlg.ShowDialog(this);
         }
         return done;
@@ -594,7 +640,7 @@ public sealed class CardPanel : Panel
     void QuickExport(ExportFormat fmt)
     {
         var sel = List.SelectedItems;
-        using var fb = new FolderBrowserDialog { Description = "Zielordner für den Export", UseDescriptionForTitle = true, SelectedPath = _host.Settings.LastExportDir };
+        using var fb = new FolderBrowserDialog { Description = L.T("Zielordner für den Export", "Target folder for the export"), UseDescriptionForTitle = true, SelectedPath = _host.Settings.LastExportDir };
         if (fb.ShowDialog(this) != DialogResult.OK) return;
         _host.Settings.LastExportDir = fb.SelectedPath;
         DoExport(sel, fmt, fb.SelectedPath, false);
@@ -615,10 +661,11 @@ public sealed class CardPanel : Panel
             }
         }
         finally { Cursor = Cursors.Default; }
-        _host.SetStatus($"{ok} Savegame(s) als {SaveFormats.Describe(fmt).Split(' ')[0]} nach {dir} exportiert." + (errors.Count > 0 ? $" {errors.Count} Fehler." : ""), errors.Count > 0);
+        _host.SetStatus(L.T($"{ok} Savegame(s) als {SaveFormats.Describe(fmt).Split(' ')[0]} nach {dir} exportiert.", $"{ok} save(s) exported as {SaveFormats.Describe(fmt).Split(' ')[0]} to {dir}.")
+                        + (errors.Count > 0 ? L.T($" {errors.Count} Fehler.", $" {errors.Count} error(s).") : ""), errors.Count > 0);
         if (errors.Count > 0)
         {
-            using var dlg = new TextReportDialog("Export – Fehler", string.Join(Environment.NewLine, errors));
+            using var dlg = new TextReportDialog(L.T("Export – Fehler", "Export – errors"), string.Join(Environment.NewLine, errors));
             dlg.ShowDialog(this);
         }
         if (open && lastPath != null)
@@ -631,10 +678,11 @@ public sealed class CardPanel : Panel
     {
         var sel = List.SelectedItems;
         if (sel.Count == 0 || !Card.CanWrite) return;
-        string what = sel.Count == 1 ? $"„{sel[0].Title}“ ({sel[0].Name})" : $"{sel.Count} Savegames";
+        string what = sel.Count == 1 ? L.T($"„{sel[0].Title}“ ({sel[0].Name})", $"\"{sel[0].Title}\" ({sel[0].Name})") : L.T($"{sel.Count} Savegames", $"{sel.Count} saves");
         var res = MessageBox.Show(this,
-            $"{what} von {Card.DisplayName} löschen?\n\nDie Kartendatei wird erst beim Speichern geändert; dabei wird automatisch ein Backup angelegt.",
-            "Löschen", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            L.T($"{what} von {Card.DisplayName} löschen?\n\nDie Kartendatei wird erst beim Speichern geändert; dabei wird automatisch ein Backup angelegt.",
+                $"Delete {what} from {Card.DisplayName}?\n\nThe card file is only changed when saving; a backup is created automatically."),
+            L.T("Löschen", "Delete"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (res != DialogResult.Yes) return;
         DeleteEntries(sel);
     }
@@ -650,7 +698,7 @@ public sealed class CardPanel : Panel
             catch (Exception ex) { _host.SetStatus($"{e.Name}: {ex.Message}", true); }
         }
         AfterChange();
-        _host.SetStatus($"Slot {Slot}: {n} Savegame(s) gelöscht" + (Card.IsModified && !_host.Settings.AutoSave ? " – zum Übernehmen „Speichern“ klicken." : "."));
+        _host.SetStatus(L.T($"Slot {Slot}: {n} Savegame(s) gelöscht", $"Slot {Slot}: {n} save(s) deleted") + (Card.IsModified && !_host.Settings.AutoSave ? L.T(" – zum Übernehmen „Speichern“ klicken.", " – click \"Save\" to apply.") : "."));
     }
 
     void RenameEntry(CardEntry entry)
@@ -659,18 +707,18 @@ public sealed class CardPanel : Panel
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         SaveGame renamed;
         try { renamed = entry.Save.Renamed(dlg.NewName, dlg.RenameFiles); }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Umbenennen", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, L.T("Umbenennen", "Rename"), MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
 
         if (dlg.KeepOriginal)
         {
             if (Card.SpaceNeeded(renamed) > Card.FreeBytes)
             {
-                MessageBox.Show(this, "Nicht genug Platz für eine Kopie. Ohne „Original behalten“ umbenennen oder Platz schaffen.",
-                    "Umbenennen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, L.T("Nicht genug Platz für eine Kopie. Ohne „Original behalten“ umbenennen oder Platz schaffen.", "Not enough space for a copy. Rename without \"Keep original\" or free up space."),
+                    L.T("Umbenennen", "Rename"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             try { Card.Import(renamed); }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Umbenennen", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, L.T("Umbenennen", "Rename"), MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
         }
         else
         {
@@ -680,14 +728,14 @@ public sealed class CardPanel : Panel
             catch (Exception ex)
             {
                 try { Card.Import(old); } catch { /* original file on disk is untouched until saving */ }
-                MessageBox.Show(this, ex.Message, "Umbenennen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, ex.Message, L.T("Umbenennen", "Rename"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 AfterChange();
                 return;
             }
         }
         AfterChange(new[] { renamed.Name });
-        _host.SetStatus($"„{entry.Name}“ → „{renamed.Name}“ ({RegionUtil.Display(renamed.Region)})" +
-                        (dlg.KeepOriginal ? ", Original behalten" : "") + (Card.IsModified && !_host.Settings.AutoSave ? " – zum Übernehmen „Speichern“ klicken." : "."));
+        _host.SetStatus(L.T($"„{entry.Name}“ → „{renamed.Name}“ ({RegionUtil.Display(renamed.Region)})", $"\"{entry.Name}\" → \"{renamed.Name}\" ({RegionUtil.Display(renamed.Region)})") +
+                        (dlg.KeepOriginal ? L.T(", Original behalten", ", original kept") : "") + (Card.IsModified && !_host.Settings.AutoSave ? L.T(" – zum Übernehmen „Speichern“ klicken.", " – click \"Save\" to apply.") : "."));
     }
 
     void ShowProperties(CardEntry e)
@@ -718,16 +766,17 @@ public sealed class CardPanel : Panel
     {
         if (!Card.CanWrite) return;
         var r = MessageBox.Show(this,
-            "Alle als „reparierbar“ markierten Probleme jetzt beheben?\n\nDas passiert zuerst nur im Speicher; erst „Speichern“ schreibt die Datei (mit Backup).",
-            "Reparieren", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            L.T("Alle als „reparierbar“ markierten Probleme jetzt beheben?\n\nDas passiert zuerst nur im Speicher; erst „Speichern“ schreibt die Datei (mit Backup).",
+                "Fix all problems marked as \"repairable\" now?\n\nThis happens in memory first; only \"Save\" writes the file (with backup)."),
+            L.T("Reparieren", "Repair"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (r != DialogResult.Yes) return;
         List<string> report;
         try { report = Card.Repair(); }
-        catch (Exception ex) { MessageBox.Show(this, "Reparatur fehlgeschlagen: " + ex.Message, "Reparieren", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+        catch (Exception ex) { MessageBox.Show(this, L.T("Reparatur fehlgeschlagen: ", "Repair failed: ") + ex.Message, L.T("Reparieren", "Repair"), MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
         AfterChange();
-        using var dlg = new TextReportDialog("Reparatur – " + Card.DisplayName,
-            report.Count == 0 ? "Nichts zu reparieren." : string.Join(Environment.NewLine, report.Select(x => "• " + x)) +
-            (Card.IsModified && !_host.Settings.AutoSave ? Environment.NewLine + Environment.NewLine + "Zum Übernehmen „Speichern“ klicken." : ""));
+        using var dlg = new TextReportDialog(L.T("Reparatur – ", "Repair – ") + Card.DisplayName,
+            report.Count == 0 ? L.T("Nichts zu reparieren.", "Nothing to repair.") : string.Join(Environment.NewLine, report.Select(x => "• " + x)) +
+            (Card.IsModified && !_host.Settings.AutoSave ? Environment.NewLine + Environment.NewLine + L.T("Zum Übernehmen „Speichern“ klicken.", "Click \"Save\" to apply.") : ""));
         dlg.ShowDialog(this);
     }
 
@@ -736,10 +785,12 @@ public sealed class CardPanel : Panel
         if (Card.DeletedSaves.Count == 0)
         {
             MessageBox.Show(this, Card.Platform == Platform.PS1
-                    ? "Auf dieser Karte gibt es keine gelöschten Savegames, die noch vollständig vorhanden sind."
-                    : "Auf PS2-Karten werden gelöschte Saves vom Dateisystem freigegeben und können nicht zuverlässig wiederhergestellt werden.\n" +
-                      "Nutze stattdessen „Backup zurückspielen“ (jede Änderung durch dieses Programm wird gesichert).",
-                "Wiederherstellen", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ? L.T("Auf dieser Karte gibt es keine gelöschten Savegames, die noch vollständig vorhanden sind.", "This card has no deleted saves that are still completely present.")
+                    : L.T("Auf PS2-Karten werden gelöschte Saves vom Dateisystem freigegeben und können nicht zuverlässig wiederhergestellt werden.\n" +
+                          "Nutze stattdessen „Backup zurückspielen“ (jede Änderung durch dieses Programm wird gesichert).",
+                          "On PS2 cards, deleted saves are freed by the file system and cannot be restored reliably.\n" +
+                          "Use \"Restore backup\" instead (every change made by this program is backed up)."),
+                L.T("Wiederherstellen", "Restore"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         using var dlg = new UndeleteDialog(Card.DeletedSaves);
@@ -753,15 +804,16 @@ public sealed class CardPanel : Panel
             catch (Exception ex) { errors.Add($"{e.Name}: {ex.Message}"); }
         }
         AfterChange(names);
-        _host.SetStatus($"Slot {Slot}: {ok} Savegame(s) wiederhergestellt" + (errors.Count > 0 ? $", {errors.Count} Fehler: " + string.Join("; ", errors) : "") +
-                        (Card.IsModified && !_host.Settings.AutoSave ? " – zum Übernehmen „Speichern“ klicken." : "."), errors.Count > 0);
+        _host.SetStatus(L.T($"Slot {Slot}: {ok} Savegame(s) wiederhergestellt", $"Slot {Slot}: {ok} save(s) restored") + (errors.Count > 0 ? L.T($", {errors.Count} Fehler: ", $", {errors.Count} error(s): ") + string.Join("; ", errors) : "") +
+                        (Card.IsModified && !_host.Settings.AutoSave ? L.T(" – zum Übernehmen „Speichern“ klicken.", " – click \"Save\" to apply.") : "."), errors.Count > 0);
     }
 
     void RestoreBackup()
     {
         if (Card is Ps2FolderCard)
         {
-            MessageBox.Show(this, "Bei Ordner-Karten liegen gelöschte Saves als Ordner im Backup-Ordner. Sie können per Drag & Drop wieder auf die Karte gezogen werden.",
+            MessageBox.Show(this, L.T("Bei Ordner-Karten liegen gelöschte Saves als Ordner im Backup-Ordner. Sie können per Drag & Drop wieder auf die Karte gezogen werden.",
+                                      "With folder cards, deleted saves are kept as folders in the backup folder. They can be dragged back onto the card via drag & drop."),
                 "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
             try { Process.Start("explorer.exe", $"\"{CardIO.BackupDir}\""); } catch { }
             return;
@@ -769,13 +821,13 @@ public sealed class CardPanel : Panel
         var backups = CardIO.ListBackups(Card.FilePath);
         if (backups.Count == 0)
         {
-            MessageBox.Show(this, "Für diese Karte gibt es noch keine Backups (sie entstehen bei jedem Speichern durch dieses Programm).",
+            MessageBox.Show(this, L.T("Für diese Karte gibt es noch keine Backups (sie entstehen bei jedem Speichern durch dieses Programm).", "There are no backups for this card yet (they are created every time this program saves)."),
                 "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (Card.IsModified)
         {
-            var q = MessageBox.Show(this, "Ungespeicherte Änderungen an dieser Karte gehen beim Zurückspielen verloren. Fortfahren?", "Backup",
+            var q = MessageBox.Show(this, L.T("Ungespeicherte Änderungen an dieser Karte gehen beim Zurückspielen verloren. Fortfahren?", "Unsaved changes to this card will be lost when restoring. Continue?"), "Backup",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (q != DialogResult.Yes) return;
         }
@@ -785,11 +837,11 @@ public sealed class CardPanel : Panel
         {
             CardIO.RestoreBackup(Card.FilePath, dlg.SelectedFile);
             ReplaceCard(CardIO.Open(Card.FilePath));
-            _host.SetStatus($"Slot {Slot}: Backup zurückgespielt (vorheriger Stand ebenfalls gesichert).");
+            _host.SetStatus(L.T($"Slot {Slot}: Backup zurückgespielt (vorheriger Stand ebenfalls gesichert).", $"Slot {Slot}: backup restored (previous state backed up as well)."));
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Zurückspielen fehlgeschlagen:\n" + ex.Message + "\n\nDie Kartendatei wurde nicht verändert.", "Backup",
+            MessageBox.Show(this, L.T("Zurückspielen fehlgeschlagen:\n", "Restore failed:\n") + ex.Message + L.T("\n\nDie Kartendatei wurde nicht verändert.", "\n\nThe card file has not been changed."), "Backup",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -812,9 +864,11 @@ public sealed class CardPanel : Panel
         if (Card is not Ps2FolderCard && File.Exists(Card.FilePath) && CurrentWriteTime() != Card.LoadedWriteTimeUtc)
         {
             var r = MessageBox.Show(this,
-                $"{Card.DisplayName} wurde seit dem Laden außerhalb geändert (z. B. von PCSX2).\n\n" +
-                "Ja = trotzdem speichern (die externe Version landet im Backup-Ordner)\nNein = Abbrechen (Tipp: „Änderungen verwerfen“ lädt die aktuelle Datei)",
-                "Datei wurde verändert", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                L.T($"{Card.DisplayName} wurde seit dem Laden außerhalb geändert (z. B. von PCSX2).\n\n" +
+                    "Ja = trotzdem speichern (die externe Version landet im Backup-Ordner)\nNein = Abbrechen (Tipp: „Änderungen verwerfen“ lädt die aktuelle Datei)",
+                    $"{Card.DisplayName} has been changed outside since loading (e.g. by PCSX2).\n\n" +
+                    "Yes = save anyway (the external version goes into the backup folder)\nNo = cancel (tip: \"Discard changes\" loads the current file)"),
+                L.T("Datei wurde verändert", "File has been changed"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (r != DialogResult.Yes) return false;
         }
         try
@@ -823,16 +877,16 @@ public sealed class CardPanel : Panel
             Card.Commit(Card.FilePath);
             Card.LoadedWriteTimeUtc = CurrentWriteTime();
             RefreshView();
-            _host.SetStatus($"Slot {Slot}: {Card.DisplayName} gespeichert (Backup im Ordner „Backups“).");
+            _host.SetStatus(L.T($"Slot {Slot}: {Card.DisplayName} gespeichert (Backup im Ordner „Backups“).", $"Slot {Slot}: {Card.DisplayName} saved (backup in the \"Backups\" folder)."));
             return true;
         }
         catch (Exception ex)
         {
             string hint = ex is IOException or UnauthorizedAccessException
-                ? "\n\nIst die Datei noch in PCSX2/einem anderen Programm geöffnet? Die Originaldatei wurde NICHT verändert."
-                : "\n\nDie Originaldatei wurde NICHT verändert.";
-            MessageBox.Show(this, "Speichern fehlgeschlagen:\n" + ex.Message + hint, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            _host.SetStatus("Speichern fehlgeschlagen: " + ex.Message, true);
+                ? L.T("\n\nIst die Datei noch in PCSX2/einem anderen Programm geöffnet? Die Originaldatei wurde NICHT verändert.", "\n\nIs the file still open in PCSX2/another program? The original file has NOT been changed.")
+                : L.T("\n\nDie Originaldatei wurde NICHT verändert.", "\n\nThe original file has NOT been changed.");
+            MessageBox.Show(this, L.T("Speichern fehlgeschlagen:\n", "Saving failed:\n") + ex.Message + hint, L.T("Fehler", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _host.SetStatus(L.T("Speichern fehlgeschlagen: ", "Saving failed: ") + ex.Message, true);
             return false;
         }
         finally { Cursor = Cursors.Default; }
@@ -841,27 +895,27 @@ public sealed class CardPanel : Panel
     public bool SaveAs()
     {
         string filter = Card.Platform == Platform.PS2
-            ? "PCSX2 (*.ps2)|*.ps2|PS3 VM2 (*.VM2)|*.VM2|OPL VMC ohne ECC (*.vmc)|*.vmc|MemCard PRO2 / SD2PSX (*.mc2)|*.mc2|Rohabbild (*.bin)|*.bin"
-            : "PS1 Raw (*.mcr)|*.mcr|DuckStation (*.mcd)|*.mcd|PS3 VM1 (*.VM1)|*.VM1|DexDrive (*.gme)|*.gme|VGS (*.vgs)|*.vgs|RetroArch (*.srm)|*.srm|POPStarter (*.VMC)|*.VMC|PSP / PS Vita (*.VMP, signiert)|*.VMP";
+            ? "PCSX2 (*.ps2)|*.ps2|PS3 VM2 (*.VM2)|*.VM2|" + L.T("OPL VMC ohne ECC", "OPL VMC without ECC") + " (*.vmc)|*.vmc|MemCard PRO2 / SD2PSX (*.mc2)|*.mc2|" + L.T("Rohabbild", "Raw image") + " (*.bin)|*.bin"
+            : "PS1 Raw (*.mcr)|*.mcr|DuckStation (*.mcd)|*.mcd|PS3 VM1 (*.VM1)|*.VM1|DexDrive (*.gme)|*.gme|VGS (*.vgs)|*.vgs|RetroArch (*.srm)|*.srm|POPStarter (*.VMC)|*.VMC|PSP / PS Vita (*.VMP, " + L.T("signiert", "signed") + ")|*.VMP";
         using var sfd = new SaveFileDialog
         {
-            Title = "Karte speichern unter / konvertieren", Filter = filter,
-            FileName = Path.GetFileNameWithoutExtension(Card.FilePath.TrimEnd('\\')) + "_kopie",
+            Title = L.T("Karte speichern unter / konvertieren", "Save card as / convert"), Filter = filter,
+            FileName = Path.GetFileNameWithoutExtension(Card.FilePath.TrimEnd('\\')) + L.T("_kopie", "_copy"),
             InitialDirectory = Path.GetDirectoryName(Card.FilePath.TrimEnd('\\')) ?? ""
         };
         if (sfd.ShowDialog(this) != DialogResult.OK) return false;
         try
         {
             CardIO.SaveAs(Card, sfd.FileName);
-            var r = MessageBox.Show(this, $"Gespeichert als:\n{sfd.FileName}\n\nDie neue Datei jetzt in diesem Segment öffnen?",
-                "Speichern unter", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+            var r = MessageBox.Show(this, L.T($"Gespeichert als:\n{sfd.FileName}\n\nDie neue Datei jetzt in diesem Segment öffnen?", $"Saved as:\n{sfd.FileName}\n\nOpen the new file in this segment now?"),
+                L.T("Speichern unter", "Save as"), MessageBoxButtons.YesNo, MessageBoxIcon.Information);
             if (r == DialogResult.Yes) ReplaceCard(CardIO.Open(sfd.FileName));
-            _host.SetStatus("Gespeichert als " + sfd.FileName);
+            _host.SetStatus(L.T("Gespeichert als ", "Saved as ") + sfd.FileName);
             return true;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Speichern fehlgeschlagen:\n" + ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("Speichern fehlgeschlagen:\n", "Saving failed:\n") + ex.Message, L.T("Fehler", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
     }
@@ -870,16 +924,16 @@ public sealed class CardPanel : Panel
     {
         if (Card.IsModified)
         {
-            var r = MessageBox.Show(this, "Alle ungespeicherten Änderungen an dieser Karte verwerfen und die Datei neu laden?", "Verwerfen",
+            var r = MessageBox.Show(this, L.T("Alle ungespeicherten Änderungen an dieser Karte verwerfen und die Datei neu laden?", "Discard all unsaved changes to this card and reload the file?"), L.T("Verwerfen", "Discard"),
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (r != DialogResult.Yes) return;
         }
         try
         {
             ReplaceCard(CardIO.Open(Card.FilePath));
-            _host.SetStatus($"Slot {Slot}: neu geladen.");
+            _host.SetStatus(L.T($"Slot {Slot}: neu geladen.", $"Slot {Slot}: reloaded."));
         }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, L.T("Fehler", "Error"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     void ReplaceCard(MemoryCard c)
@@ -893,7 +947,7 @@ public sealed class CardPanel : Panel
     public bool ConfirmClose()
     {
         if (!Card.IsModified) return true;
-        var r = MessageBox.Show(this, $"{Card.DisplayName} hat ungespeicherte Änderungen. Speichern?", "Karte schließen",
+        var r = MessageBox.Show(this, L.T($"{Card.DisplayName} hat ungespeicherte Änderungen. Speichern?", $"{Card.DisplayName} has unsaved changes. Save?"), L.T("Karte schließen", "Close card"),
             MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
         if (r == DialogResult.Cancel) return false;
         if (r == DialogResult.Yes) return Save();

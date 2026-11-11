@@ -191,12 +191,12 @@ public static class RegionUtil
     public static string Display(Region r) => r switch
     {
         Region.USA => "NTSC-U (USA)",
-        Region.Europa => "PAL (Europa)",
+        Region.Europa => L.T("PAL (Europa)", "PAL (Europe)"),
         Region.Japan => "NTSC-J (Japan)",
         Region.Korea => "Korea",
-        Region.Asien => "Asien",
+        Region.Asien => L.T("Asien", "Asia"),
         Region.China => "China",
-        _ => "unbekannt"
+        _ => L.T("unbekannt", "unknown")
     };
 
     /// <summary>Product code "SLUS-20919" extracted from a save name, or empty.</summary>

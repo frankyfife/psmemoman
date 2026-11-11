@@ -16,7 +16,7 @@ public sealed class Ps2FolderCard : MemoryCard
     readonly List<Ps2Save> _pendingImports = new();
 
     public override Platform Platform => Platform.PS2;
-    public override string FormatName => "PCSX2 Ordner-Karte – PS2, 8 MB";
+    public override string FormatName => L.T("PCSX2 Ordner-Karte – PS2, 8 MB", "PCSX2 folder card – PS2, 8 MB");
     public override IReadOnlyList<CardEntry> Entries => _entries;
     public override long TotalBytes => TotalClusters * 1024L;
     public override long FreeBytes => Math.Max(0, TotalBytes - UsedBytes());
@@ -41,7 +41,7 @@ public sealed class Ps2FolderCard : MemoryCard
                 var save = SaveFormats.LoadPs2Folder(sub);
                 _entries.Add(MakeEntry(save, Directory.GetLastWriteTime(sub)));
             }
-            catch (Exception ex) { Warnings.Add($"Ordner '{name}' übersprungen: {ex.Message}"); }
+            catch (Exception ex) { Warnings.Add(L.T($"Ordner '{name}' übersprungen: {ex.Message}", $"Folder '{name}' skipped: {ex.Message}")); }
         }
     }
 
@@ -69,12 +69,12 @@ public sealed class Ps2FolderCard : MemoryCard
 
     public override void Import(SaveGame save)
     {
-        var s = save.Ps2 ?? throw new InvalidOperationException("PS1-Savegames können nicht auf eine PS2-Karte kopiert werden.");
+        var s = save.Ps2 ?? throw new InvalidOperationException(L.T("PS1-Savegames können nicht auf eine PS2-Karte kopiert werden.", "PS1 saves cannot be copied to a PS2 card."));
         s.Validate();
-        if (Exists(s.DirName)) throw new InvalidOperationException($"Savegame '{s.DirName}' existiert bereits auf der Karte.");
-        if (SpaceNeeded(save) > FreeBytes) throw new CardFullException($"Nicht genug Platz für '{s.DirName}'.");
+        if (Exists(s.DirName)) throw new InvalidOperationException(L.T($"Savegame '{s.DirName}' existiert bereits auf der Karte.", $"Save '{s.DirName}' already exists on the card."));
+        if (SpaceNeeded(save) > FreeBytes) throw new CardFullException(L.T($"Nicht genug Platz für '{s.DirName}'.", $"Not enough space for '{s.DirName}'."));
         if (s.DirName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            throw new InvalidOperationException($"'{s.DirName}' ist als Windows-Ordnername ungültig.");
+            throw new InvalidOperationException(L.T($"'{s.DirName}' ist als Windows-Ordnername ungültig.", $"'{s.DirName}' is not a valid Windows folder name."));
         var copy = s.Clone();
         _pendingImports.Add(copy);
         _entries.Add(MakeEntry(copy, DateTime.Now));
@@ -84,7 +84,7 @@ public sealed class Ps2FolderCard : MemoryCard
     public override void Commit(string path)
     {
         if (!string.Equals(Path.GetFullPath(path), FilePath, StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("Ordner-Karten können nur an Ort und Stelle gespeichert werden.");
+            throw new NotSupportedException(L.T("Ordner-Karten können nur an Ort und Stelle gespeichert werden.", "Folder cards can only be saved in place."));
         string backupRoot = Path.Combine(CardIO.BackupDir, TextUtil.SafeFileName(Path.GetFileName(FilePath)) + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         foreach (var name in _pendingDeletes.ToList())
         {

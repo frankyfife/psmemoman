@@ -26,16 +26,16 @@ public static class SaveFormats
 
     public static string Describe(ExportFormat f) => f switch
     {
-        ExportFormat.Psu => "PSU (EMS / uLaunchELF / PCSX2) – empfohlen",
+        ExportFormat.Psu => L.T("PSU (EMS / uLaunchELF / PCSX2) – empfohlen", "PSU (EMS / uLaunchELF / PCSX2) – recommended"),
         ExportFormat.Max => "MAX (Action Replay MAX)",
         ExportFormat.Cbs => "CBS (CodeBreaker)",
-        ExportFormat.Psv => "PSV (PS3, signiert)",
-        ExportFormat.Ps2Folder => "Ordner (Rohdateien)",
-        ExportFormat.Ps2Zip => "ZIP (Ordner gepackt)",
-        ExportFormat.Mcs => "MCS (PSXGameEdit / MemcardRex / ePSXe) – empfohlen",
+        ExportFormat.Psv => L.T("PSV (PS3, signiert)", "PSV (PS3, signed)"),
+        ExportFormat.Ps2Folder => L.T("Ordner (Rohdateien)", "Folder (raw files)"),
+        ExportFormat.Ps2Zip => L.T("ZIP (Ordner gepackt)", "ZIP (zipped folder)"),
+        ExportFormat.Mcs => L.T("MCS (PSXGameEdit / MemcardRex / ePSXe) – empfohlen", "MCS (PSXGameEdit / MemcardRex / ePSXe) – recommended"),
         ExportFormat.ActionReplay => "PSX/MCB (Action Replay / GameShark / Xploder)",
-        ExportFormat.Ps1Raw => "RAW (Blockdaten, Dateiname = Savename)",
-        ExportFormat.Ps1Psv => "PSV (PS3, signiert)",
+        ExportFormat.Ps1Raw => L.T("RAW (Blockdaten, Dateiname = Savename)", "RAW (block data, file name = save name)"),
+        ExportFormat.Ps1Psv => L.T("PSV (PS3, signiert)", "PSV (PS3, signed)"),
         _ => f.ToString()
     };
 
@@ -49,7 +49,7 @@ public static class SaveFormats
     /// Loads every save contained in a file or folder (single save files, ZIPs, folders, even complete
     /// memory cards). Nothing on disk is modified.
     /// </summary>
-    public static List<SaveGame> LoadAny(string path, List<string>? warnings = null)
+    public static List<SaveGame> LoadAny(string path, List<string>? warnings = null, Rescue? rx = null)
     {
         var res = new List<SaveGame>();
         if (Directory.Exists(path))
@@ -66,21 +66,21 @@ public static class SaveFormats
             }
             foreach (var f in Directory.GetFiles(path))
             {
-                try { res.AddRange(LoadAny(f, warnings)); }
+                try { res.AddRange(LoadAny(f, warnings, rx == null ? null : new Rescue())); }
                 catch (Exception ex) { warnings?.Add($"{Path.GetFileName(f)}: {ex.Message}"); }
             }
             foreach (var d in Directory.GetDirectories(path))
             {
-                try { res.AddRange(LoadAny(d, warnings)); }
+                try { res.AddRange(LoadAny(d, warnings, rx == null ? null : new Rescue())); }
                 catch (Exception ex) { warnings?.Add($"{Path.GetFileName(d)}: {ex.Message}"); }
             }
             return res;
         }
         var data = File.ReadAllBytes(path);
-        return LoadBytes(data, Path.GetFileName(path), warnings);
+        return LoadBytes(data, Path.GetFileName(path), warnings, rx);
     }
 
-    public static List<SaveGame> LoadBytes(byte[] d, string fileName, List<string>? warnings = null)
+    public static List<SaveGame> LoadBytes(byte[] d, string fileName, List<string>? warnings = null, Rescue? rx = null)
     {
         var res = new List<SaveGame>();
         // complete memory cards → all their saves
@@ -92,20 +92,76 @@ public static class SaveFormats
             return res;
         }
         if (d.Length >= 4 && d[0] == 'P' && d[1] == 'K' && d[2] == 3 && d[3] == 4)
-            return LoadZip(d, warnings);
-        res.Add(LoadSingle(d, fileName));
+            return LoadZip(d, warnings, rx);
+        res.Add(LoadSingle(d, fileName, rx));
         return res;
     }
 
-    public static SaveGame LoadSingle(byte[] d, string fileName)
+    /// <summary>
+    /// Lenient reading for the rescue import ("ohne Gewähr"): truncated data is padded with zeros
+    /// and every problem is collected instead of aborting the import.
+    /// </summary>
+    public sealed class Rescue
     {
-        if (Bin.StartsWith(d, "Ps2PowerSave")) return new SaveGame { Ps2 = LoadMax(d) };
-        if (d.Length >= 4 && d[0] == 'C' && d[1] == 'F' && d[2] == 'U' && d[3] == 0) return new SaveGame { Ps2 = LoadCbs(d) };
+        public readonly List<string> Problems = new();
+    }
+
+    public static string RescueTag => L.T("Rettungsimport (ohne Gewähr)", "Rescue import (no guarantee)");
+
+    static byte[] Take(byte[] d, long off, long len, Rescue? rx, string what)
+    {
+        if (len < 0 || len > 64L * 1024 * 1024) throw new InvalidDataException(L.T($"{what}: Größenangabe ungültig.", $"{what}: invalid size."));
+        if (off >= 0 && off + len <= d.Length) return d.AsSpan((int)off, (int)len).ToArray();
+        if (rx == null) throw new InvalidDataException(L.T($"{what}: Datei ist abgeschnitten.", $"{what}: file is truncated."));
+        var r = new byte[len];
+        long avail = Math.Clamp(d.Length - off, 0, len);
+        if (avail > 0) d.AsSpan((int)off, (int)avail).CopyTo(r);
+        rx.Problems.Add(L.T($"{what}: {avail:#,0} von {len:#,0} Bytes", $"{what}: {avail:#,0} of {len:#,0} bytes"));
+        return r;
+    }
+
+    /// <summary>PS1 data padded to whole 8 KB blocks (rescue).</summary>
+    static byte[] PadBlocks(byte[] d, int off, Rescue rx)
+    {
+        int len = d.Length - off;
+        int blocks = Math.Clamp(Bin.DivUp(len, Ps1Save.BlockSize), 1, 15);
+        return Take(d, off, (long)blocks * Ps1Save.BlockSize, rx, L.T("Blockdaten", "block data"));
+    }
+
+    public static SaveGame LoadSingle(byte[] d, string fileName, Rescue? rx = null)
+    {
+        var g = LoadSingleCore(d, fileName, rx);
+        if (rx != null)
+        {
+            g.Damaged = true;
+            g.Problem = RescueTag + (rx.Problems.Count > 0 ? ": " + string.Join(", ", rx.Problems.Distinct().Take(6)) : "");
+        }
+        return g;
+    }
+
+    static SaveGame LoadSingleCore(byte[] d, string fileName, Rescue? rx)
+    {
+        if (Bin.StartsWith(d, "Ps2PowerSave")) return new SaveGame { Ps2 = LoadMax(d, rx) };
+        if (d.Length >= 4 && d[0] == 'C' && d[1] == 'F' && d[2] == 'U' && d[3] == 0) return new SaveGame { Ps2 = LoadCbs(d, rx) };
         if (d.Length >= 17 && d[0] == 0x0D && d[1] == 0 && d[2] == 0 && d[3] == 0 && Bin.StartsWith(d.AsSpan(4), "SharkPortSave"))
-            return new SaveGame { Ps2 = LoadSps(d) };
-        if (d.Length >= 0x84 && d[0] == 0 && d[1] == 'V' && d[2] == 'S' && d[3] == 'P') return LoadPsv(d);
-        if (Bin.StartsWith(d, "nPort")) throw new NotSupportedException("nPort-Saves (.npo) werden nicht unterstützt.");
-        if (LooksLikePsu(d)) return new SaveGame { Ps2 = LoadPsu(d) };
+            return new SaveGame { Ps2 = LoadSps(d, rx) };
+        if (d.Length >= 0x84 && d[0] == 0 && d[1] == 'V' && d[2] == 'S' && d[3] == 'P') return LoadPsv(d, rx);
+        if (Bin.StartsWith(d, "nPort")) throw new NotSupportedException(L.T("nPort-Saves (.npo) werden nicht unterstützt.", "nPort saves (.npo) are not supported."));
+        if (LooksLikePsu(d)) return new SaveGame { Ps2 = LoadPsu(d, rx) };
+
+        if (rx != null)
+        {
+            // lenient PS1 detection: block data does not need to be complete
+            if (d.Length > 130 && d[0] == 0x51 && d[128] == 'S' && d[129] == 'C')
+                return new SaveGame { Ps1 = new Ps1Save { FileName = Bin.ZStr(d.AsSpan(0x0A, 20)), Data = PadBlocks(d, 128, rx) } };
+            if (d.Length > 56 && d[54] == 'S' && d[55] == 'C')
+            {
+                string n = Bin.ZStr(d.AsSpan(0, 20));
+                return new SaveGame { Ps1 = new Ps1Save { FileName = n.Length > 0 ? n : NameFromFile(fileName), Data = PadBlocks(d, 54, rx) } };
+            }
+            if (d.Length > 2 && d[0] == 'S' && d[1] == 'C')
+                return new SaveGame { Ps1 = new Ps1Save { FileName = NameFromFile(fileName), Data = PadBlocks(d, 0, rx) } };
+        }
 
         // PS1 single saves
         if (d.Length >= 128 + Ps1Save.BlockSize && (d.Length - 128) % Ps1Save.BlockSize == 0 && d[0] == 0x51 && d[128] == 'S' && d[129] == 'C')
@@ -118,7 +174,7 @@ public static class SaveFormats
         if (d.Length >= Ps1Save.BlockSize && d.Length % Ps1Save.BlockSize == 0 && d.Length <= 15 * Ps1Save.BlockSize && d[0] == 'S' && d[1] == 'C')
             return new SaveGame { Ps1 = new Ps1Save { FileName = NameFromFile(fileName), Data = (byte[])d.Clone() } };
 
-        throw new InvalidDataException("Unbekanntes oder beschädigtes Savegame-Format.");
+        throw new InvalidDataException(L.T("Unbekanntes oder beschädigtes Savegame-Format.", "Unknown or damaged save format."));
     }
 
     static string NameFromFile(string fileName)
@@ -139,26 +195,35 @@ public static class SaveFormats
 
     // ------------------------------------------------------------------------ PSU
 
-    public static Ps2Save LoadPsu(byte[] d)
+    public static Ps2Save LoadPsu(byte[] d, Rescue? rx = null)
     {
         var dir = Ps2DirEntry.Parse(d);
-        if (!dir.IsDir || dir.Length < 2) throw new InvalidDataException("Keine gültige PSU-Datei.");
+        if (!dir.IsDir || dir.Length < 2) throw new InvalidDataException(L.T("Keine gültige PSU-Datei.", "Not a valid PSU file."));
         var s = new Ps2Save { DirName = dir.Name, Mode = dir.Mode, Created = dir.Created, Modified = dir.Modified, Attr = dir.Attr };
-        int off = 3 * 512;
-        for (int i = 0; i < dir.Length - 2; i++)
+        long off = 3 * 512;
+        for (int i = 0; i < Math.Min(dir.Length - 2, 1000u); i++)
         {
-            if (off + 512 > d.Length) throw new InvalidDataException("PSU-Datei ist abgeschnitten.");
-            var e = Ps2DirEntry.Parse(d.AsSpan(off));
+            if (off + 512 > d.Length)
+            {
+                if (rx == null) throw new InvalidDataException(L.T("PSU-Datei ist abgeschnitten.", "PSU file is truncated."));
+                rx.Problems.Add(L.T($"Verzeichnis abgeschnitten nach {s.Files.Count} von {dir.Length - 2} Dateien", $"directory truncated after {s.Files.Count} of {dir.Length - 2} files"));
+                break;
+            }
+            var e = Ps2DirEntry.Parse(d.AsSpan((int)off));
             off += 512;
             if (!e.Exists) continue;
-            if (!e.IsFile) throw new InvalidDataException("PSU enthält Unterverzeichnisse (nicht unterstützt).");
-            if (off + e.Length > d.Length) throw new InvalidDataException($"PSU-Datei ist abgeschnitten ({e.Name}).");
+            if (!e.IsFile)
+            {
+                if (rx == null) throw new InvalidDataException(L.T("PSU enthält Unterverzeichnisse (nicht unterstützt).", "PSU contains subdirectories (not supported)."));
+                rx.Problems.Add(L.T($"Eintrag „{e.Name}“ übersprungen (kein Dateieintrag)", $"entry \"{e.Name}\" skipped (not a file entry)"));
+                break; // the following layout is unknown
+            }
             s.Files.Add(new Ps2SaveFile
             {
                 Name = e.Name, Mode = e.Mode, Created = e.Created, Modified = e.Modified, Attr = e.Attr,
-                Data = d.AsSpan(off, (int)e.Length).ToArray()
+                Data = Take(d, off, e.Length, rx, e.Name)
             });
-            off += (int)Bin.DivUp(e.Length, 1024L) * 1024;
+            off += Bin.DivUp(e.Length, 1024L) * 1024;
         }
         return s;
     }
@@ -191,28 +256,42 @@ public static class SaveFormats
 
     // ------------------------------------------------------------------------ MAX
 
-    public static Ps2Save LoadMax(byte[] d)
+    public static Ps2Save LoadMax(byte[] d, Rescue? rx = null)
     {
-        if (d.Length < 0x5C || !Bin.StartsWith(d, "Ps2PowerSave")) throw new InvalidDataException("Keine MAX-Datei.");
+        if (d.Length < 0x5C || !Bin.StartsWith(d, "Ps2PowerSave")) throw new InvalidDataException(L.T("Keine MAX-Datei.", "Not a MAX file."));
         string dirName = Bin.ZStr(d.AsSpan(16, 32));
         uint clen = Bin.U32(d, 80);
         uint count = Bin.U32(d, 84);
         uint ulen = Bin.U32(d, 88);
-        if (count > 10000 || ulen > 64 * 1024 * 1024) throw new InvalidDataException("MAX-Kopf ist ungültig.");
+        if (count > 10000 || ulen > 64 * 1024 * 1024) throw new InvalidDataException(L.T("MAX-Kopf ist ungültig.", "MAX header is invalid."));
         int bodyLen = clen == ulen || clen < 4 ? d.Length - 0x5C : (int)Math.Min(clen - 4, (uint)(d.Length - 0x5C));
         var body = d.AsSpan(0x5C, bodyLen).ToArray();
-        var u = Lzari.Decode(body, (int)ulen);
+        byte[] u;
+        int produced = (int)ulen;
+        if (rx == null) u = Lzari.Decode(body, (int)ulen);
+        else
+        {
+            u = Lzari.DecodePartial(body, (int)ulen, out produced);
+            if (produced < ulen) rx.Problems.Add(L.T($"Entpacken nach {produced:#,0} von {ulen:#,0} Bytes abgebrochen", $"unpacking aborted after {produced:#,0} of {ulen:#,0} bytes"));
+        }
         var now = Ps2Tod.Now;
         var s = new Ps2Save { DirName = dirName, Created = now, Modified = now };
         int off = 0;
         for (int i = 0; i < count; i++)
         {
-            if (off + 36 > u.Length) throw new InvalidDataException("MAX-Datei ist abgeschnitten.");
+            if (off + 36 > produced)
+            {
+                if (rx == null) throw new InvalidDataException(L.T("MAX-Datei ist abgeschnitten.", "MAX file is truncated."));
+                rx.Problems.Add(L.T($"nur {s.Files.Count} von {count} Dateien lesbar", $"only {s.Files.Count} of {count} files readable"));
+                break;
+            }
             int len = (int)Bin.U32(u, off);
             string name = Bin.ZStr(u.AsSpan(off + 4, 32));
             off += 36;
-            if (len < 0 || off + len > u.Length) throw new InvalidDataException("MAX-Datei ist abgeschnitten.");
-            s.Files.Add(new Ps2SaveFile { Name = name, Mode = 0x8497, Created = now, Modified = now, Data = u.AsSpan(off, len).ToArray() });
+            if (len < 0 || off + (long)len > u.Length) throw new InvalidDataException(L.T("MAX-Datei ist abgeschnitten.", "MAX file is truncated."));
+            var data = u.AsSpan(off, len).ToArray();
+            if (rx != null && off + len > produced) rx.Problems.Add(L.T($"{name}: {Math.Max(0, produced - off):#,0} von {len:#,0} Bytes", $"{name}: {Math.Max(0, produced - off):#,0} of {len:#,0} bytes"));
+            s.Files.Add(new Ps2SaveFile { Name = name, Mode = 0x8497, Created = now, Modified = now, Data = data });
             off += len;
             off = (off + 8 + 15) / 16 * 16 - 8;
         }
@@ -296,13 +375,14 @@ public static class SaveFormats
         return o;
     }
 
-    public static Ps2Save LoadCbs(byte[] d)
+    public static Ps2Save LoadCbs(byte[] d, Rescue? rx = null)
     {
-        if (d.Length < 0x4C) throw new InvalidDataException("CBS-Datei ist zu kurz.");
+        if (d.Length < 0x4C) throw new InvalidDataException(L.T("CBS-Datei ist zu kurz.", "CBS file is too short."));
         int hlen = (int)Bin.U32(d, 8);
         int dlen = (int)Bin.U32(d, 12);
         int flen = (int)Bin.U32(d, 16);
-        if (hlen < 0x4C || hlen > d.Length || dlen < 0 || dlen > 64 * 1024 * 1024) throw new InvalidDataException("CBS-Kopf ist ungültig.");
+        if (hlen < 0x4C || hlen > d.Length || dlen < 0 || dlen > 64 * 1024 * 1024) throw new InvalidDataException(L.T("CBS-Kopf ist ungültig.", "CBS header is invalid."));
+        if (rx != null && flen > d.Length - hlen) rx.Problems.Add(L.T($"komprimierte Daten abgeschnitten ({d.Length - hlen:#,0} von {flen:#,0} Bytes)", $"compressed data truncated ({d.Length - hlen:#,0} of {flen:#,0} bytes)"));
         flen = Math.Min(flen, d.Length - hlen);
         var s = new Ps2Save
         {
@@ -315,19 +395,27 @@ public static class SaveFormats
         using (var zs = new ZLibStream(new MemoryStream(dec), CompressionMode.Decompress))
         using (var outMs = new MemoryStream())
         {
-            zs.CopyTo(outMs);
+            if (rx == null) zs.CopyTo(outMs);
+            else
+            {
+                // read in small pieces so everything before the damage is kept
+                var buf = new byte[4096];
+                try { int n; while ((n = zs.Read(buf, 0, buf.Length)) > 0) outMs.Write(buf, 0, n); }
+                catch (Exception ex) { rx.Problems.Add(L.T($"Entpacken nach {outMs.Length:#,0} Bytes abgebrochen ({ex.GetType().Name})", $"unpacking aborted after {outMs.Length:#,0} bytes ({ex.GetType().Name})")); }
+            }
             body = outMs.ToArray();
         }
         int off = 0;
         while (off + 64 <= body.Length)
         {
             int size = (int)Bin.U32(body, off + 16);
-            if (size < 0 || off + 64 + size > body.Length) throw new InvalidDataException("CBS-Inhalt ist beschädigt.");
+            if (size < 0 || (rx == null && off + 64 + size > body.Length)) throw new InvalidDataException(L.T("CBS-Inhalt ist beschädigt.", "CBS content is damaged."));
+            string fname = Bin.ZStr(body.AsSpan(off + 32, 32));
             s.Files.Add(new Ps2SaveFile
             {
                 Created = Ps2Tod.Read(body, off), Modified = Ps2Tod.Read(body, off + 8),
-                Mode = Bin.U16(body, off + 20), Name = Bin.ZStr(body.AsSpan(off + 32, 32)),
-                Data = body.AsSpan(off + 64, size).ToArray()
+                Mode = Bin.U16(body, off + 20), Name = fname,
+                Data = Take(body, off + 64, size, rx, fname)
             });
             off += 64 + size;
         }
@@ -377,17 +465,17 @@ public static class SaveFormats
 
     // ------------------------------------------------------------------------ SharkPort / X-Port
 
-    public static Ps2Save LoadSps(byte[] d)
+    public static Ps2Save LoadSps(byte[] d, Rescue? rx = null)
     {
         int off = 17;
         uint ReadU32() { var v = Bin.U32(d, off); off += 4; return v; }
-        void SkipStr() { int l = (int)ReadU32(); if (l < 0 || off + l > d.Length) throw new InvalidDataException("SPS-Datei ist beschädigt."); off += l; }
+        void SkipStr() { int l = (int)ReadU32(); if (l < 0 || off + l > d.Length) throw new InvalidDataException(L.T("SPS-Datei ist beschädigt.", "SPS file is damaged.")); off += l; }
         ReadU32();      // save type
         SkipStr();      // name
         SkipStr();      // date
         SkipStr();      // comment
         ReadU32();      // total length
-        if (off + 98 > d.Length) throw new InvalidDataException("SPS-Datei ist abgeschnitten.");
+        if (off + 98 > d.Length) throw new InvalidDataException(L.T("SPS-Datei ist abgeschnitten.", "SPS file is truncated."));
         int hl = Bin.U16(d, off);
         string dirName = Bin.ZStr(d.AsSpan(off + 2, 64));
         int dirLen = (int)Bin.U32(d, off + 66);
@@ -397,11 +485,16 @@ public static class SaveFormats
         off += Math.Max(98, hl);
         dirMode = ((dirMode & 0xFF) << 8) | (dirMode >> 8);
         dirMode |= Ps2DirEntry.DfExists;
-        if ((dirMode & Ps2DirEntry.DfDir) == 0 || dirLen < 2) throw new InvalidDataException("SPS-Verzeichniseintrag ungültig.");
+        if ((dirMode & Ps2DirEntry.DfDir) == 0 || dirLen < 2) throw new InvalidDataException(L.T("SPS-Verzeichniseintrag ungültig.", "SPS directory entry invalid."));
         var s = new Ps2Save { DirName = dirName, Mode = (ushort)dirMode, Created = created, Modified = modified };
-        for (int i = 0; i < dirLen - 2; i++)
+        for (int i = 0; i < Math.Min(dirLen - 2, 1000); i++)
         {
-            if (off + 98 > d.Length) throw new InvalidDataException("SPS-Datei ist abgeschnitten.");
+            if (off + 98 > d.Length)
+            {
+                if (rx == null) throw new InvalidDataException(L.T("SPS-Datei ist abgeschnitten.", "SPS file is truncated."));
+                rx.Problems.Add(L.T($"nur {s.Files.Count} von {dirLen - 2} Dateien vorhanden", $"only {s.Files.Count} of {dirLen - 2} files present"));
+                break;
+            }
             int fhl = Bin.U16(d, off);
             string name = Bin.ZStr(d.AsSpan(off + 2, 64));
             int flen = (int)Bin.U32(d, off + 66);
@@ -411,8 +504,8 @@ public static class SaveFormats
             off += Math.Max(98, fhl);
             mode = ((mode & 0xFF) << 8) | (mode >> 8);
             mode |= Ps2DirEntry.DfExists;
-            if (flen < 0 || off + flen > d.Length) throw new InvalidDataException("SPS-Datei ist abgeschnitten.");
-            s.Files.Add(new Ps2SaveFile { Name = name, Mode = (ushort)mode, Created = fc, Modified = fm, Data = d.AsSpan(off, flen).ToArray() });
+            if (flen < 0) throw new InvalidDataException(L.T("SPS-Datei ist beschädigt.", "SPS file is damaged."));
+            s.Files.Add(new Ps2SaveFile { Name = name, Mode = (ushort)mode, Created = fc, Modified = fm, Data = Take(d, off, flen, rx, name) });
             off += flen;
         }
         return s;
@@ -420,7 +513,7 @@ public static class SaveFormats
 
     // ------------------------------------------------------------------------ PSV (PS3)
 
-    public static SaveGame LoadPsv(byte[] d)
+    public static SaveGame LoadPsv(byte[] d, Rescue? rx = null)
     {
         // 0x38 = sub-header size (0x14 PS1 / 0x2C PS2), 0x3C = type (1 = PS1, 2 = PS2)
         uint type = Bin.U32(d, 0x3C);
@@ -429,14 +522,20 @@ public static class SaveFormats
             int size = (int)Bin.U32(d, 0x40);
             int pos = (int)Bin.U32(d, 0x44);
             if (pos <= 0 || pos >= d.Length) pos = 0x84;
+            string name = Bin.ZStr(d.AsSpan(0x64, 20));
+            if (rx != null)
+            {
+                if (size <= 0 || size > 15 * Ps1Save.BlockSize) size = d.Length - pos;
+                size = Math.Clamp(Bin.DivUp(size, Ps1Save.BlockSize), 1, 15) * Ps1Save.BlockSize;
+                return new SaveGame { Ps1 = new Ps1Save { FileName = name, Data = Take(d, pos, size, rx, L.T("Blockdaten", "block data")) } };
+            }
             if (size <= 0 || pos + size > d.Length) size = d.Length - pos;
             size = size / Ps1Save.BlockSize * Ps1Save.BlockSize;
-            string name = Bin.ZStr(d.AsSpan(0x64, 20));
             return new SaveGame { Ps1 = new Ps1Save { FileName = name, Data = d.AsSpan(pos, size).ToArray() } };
         }
         if (type == 2)
         {
-            if (d.Length < 0xA0) throw new InvalidDataException("PSV-Datei ist zu kurz.");
+            if (d.Length < 0xA0) throw new InvalidDataException(L.T("PSV-Datei ist zu kurz.", "PSV file is too short."));
             int numFiles = (int)Bin.U32(d, 0x64);
             var s = new Ps2Save
             {
@@ -444,11 +543,16 @@ public static class SaveFormats
                 Attr = 0, Mode = (ushort)(Bin.U32(d, 0x7C) & 0xFFFF), DirName = Bin.ZStr(d.AsSpan(0x80, 32))
             };
             if ((s.Mode & Ps2DirEntry.DfDir) == 0) s.Mode = Ps2DirEntry.DefaultDirMode;
-            if (numFiles < 0 || numFiles > 1000) throw new InvalidDataException("PSV-Kopf ist ungültig.");
+            if (numFiles < 0 || numFiles > 1000) throw new InvalidDataException(L.T("PSV-Kopf ist ungültig.", "PSV header is invalid."));
             int off = 0xA0;
             for (int i = 0; i < numFiles; i++)
             {
-                if (off + 60 > d.Length) throw new InvalidDataException("PSV-Datei ist abgeschnitten.");
+                if (off + 60 > d.Length)
+                {
+                    if (rx == null) throw new InvalidDataException(L.T("PSV-Datei ist abgeschnitten.", "PSV file is truncated."));
+                    rx.Problems.Add(L.T($"nur {s.Files.Count} von {numFiles} Dateien vorhanden", $"only {s.Files.Count} of {numFiles} files present"));
+                    break;
+                }
                 var f = new Ps2SaveFile
                 {
                     Created = Ps2Tod.Read(d, off), Modified = Ps2Tod.Read(d, off + 8),
@@ -456,15 +560,15 @@ public static class SaveFormats
                 };
                 int size = (int)Bin.U32(d, off + 16);
                 int pos = (int)Bin.U32(d, off + 56);
-                if (size < 0 || pos < 0 || pos + (long)size > d.Length) throw new InvalidDataException($"PSV-Datei ist beschädigt ({f.Name}).");
-                f.Data = d.AsSpan(pos, size).ToArray();
+                if (size < 0 || pos < 0) throw new InvalidDataException(L.T($"PSV-Datei ist beschädigt ({f.Name}).", $"PSV file is damaged ({f.Name})."));
+                f.Data = Take(d, pos, size, rx, f.Name);
                 if ((f.Mode & Ps2DirEntry.DfFile) == 0) f.Mode = Ps2DirEntry.DefaultFileMode;
                 s.Files.Add(f);
                 off += 60;
             }
             return new SaveGame { Ps2 = s };
         }
-        throw new InvalidDataException("Unbekannter PSV-Typ.");
+        throw new InvalidDataException(L.T("Unbekannter PSV-Typ.", "Unknown PSV type."));
     }
 
     // ------------------------------------------------------------------------ folders / zip
@@ -487,7 +591,7 @@ public static class SaveFormats
                 Created = Ps2Tod.FromDateTime(fi.CreationTime), Modified = Ps2Tod.FromDateTime(fi.LastWriteTime)
             });
         }
-        if (info.GetDirectories().Length > 0) s.Warnings.Add("Unterordner werden ignoriert.");
+        if (info.GetDirectories().Length > 0) s.Warnings.Add(L.T("Unterordner werden ignoriert.", "Subfolders are ignored."));
         // put icon.sys first like the PS2 does
         var ic = s.Files.FindIndex(f => f.Name.Equals("icon.sys", StringComparison.OrdinalIgnoreCase));
         if (ic > 0) { var f = s.Files[ic]; s.Files.RemoveAt(ic); s.Files.Insert(0, f); }
@@ -499,7 +603,7 @@ public static class SaveFormats
         Directory.CreateDirectory(dir);
         foreach (var f in s.Files)
         {
-            if (f.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException($"Dateiname '{f.Name}' ist unter Windows ungültig.");
+            if (f.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException(L.T($"Dateiname '{f.Name}' ist unter Windows ungültig.", $"File name '{f.Name}' is invalid on Windows."));
             string p = Path.Combine(dir, f.Name);
             File.WriteAllBytes(p, f.Data);
             var c = f.Created.ToLocal();
@@ -513,7 +617,7 @@ public static class SaveFormats
         if (dm != null) Directory.SetLastWriteTime(dir, dm.Value);
     }
 
-    static List<SaveGame> LoadZip(byte[] d, List<string>? warnings)
+    static List<SaveGame> LoadZip(byte[] d, List<string>? warnings, Rescue? rx = null)
     {
         var res = new List<SaveGame>();
         using var za = new ZipArchive(new MemoryStream(d), ZipArchiveMode.Read);
@@ -530,7 +634,7 @@ public static class SaveFormats
             string ext = Path.GetExtension(e.Name).ToLowerInvariant();
             if (ext is ".psu" or ".max" or ".cbs" or ".sps" or ".xps" or ".psv" or ".mcs" or ".psx" or ".mcb" or ".mcx" or ".pda")
             {
-                try { res.AddRange(LoadBytes(data, e.Name, warnings)); }
+                try { res.AddRange(LoadBytes(data, e.Name, warnings, rx == null ? null : new Rescue())); }
                 catch (Exception ex) { warnings?.Add($"{e.FullName}: {ex.Message}"); }
                 continue;
             }
@@ -547,7 +651,7 @@ public static class SaveFormats
                     try
                     {
                         using var st = e.Open(); using var ms = new MemoryStream(); st.CopyTo(ms);
-                        res.AddRange(LoadBytes(ms.ToArray(), e.Name, warnings));
+                        res.AddRange(LoadBytes(ms.ToArray(), e.Name, warnings, rx == null ? null : new Rescue()));
                     }
                     catch (Exception ex) { warnings?.Add($"{e.FullName}: {ex.Message}"); }
                 }
@@ -580,7 +684,7 @@ public static class SaveFormats
                 ExportFormat.Cbs => SaveCbs(g.Ps2),
                 ExportFormat.Psv => PsSign.MakePs2Psv(g.Ps2),
                 ExportFormat.Ps2Zip => SaveZip(g.Ps2),
-                _ => throw new NotSupportedException($"Format {f} ist für PS2-Saves nicht möglich.")
+                _ => throw new NotSupportedException(L.T($"Format {f} ist für PS2-Saves nicht möglich.", $"Format {f} is not possible for PS2 saves."))
             };
         }
         var p = g.Ps1!;
@@ -614,7 +718,7 @@ public static class SaveFormats
             case ExportFormat.Ps1Psv:
                 return PsSign.MakePs1Psv(p);
             default:
-                throw new NotSupportedException($"Format {f} ist für PS1-Saves nicht möglich.");
+                throw new NotSupportedException(L.T($"Format {f} ist für PS1-Saves nicht möglich.", $"Format {f} is not possible for PS1 saves."));
         }
     }
 
@@ -663,7 +767,7 @@ public static class SaveFormats
         string path = UniquePath(Path.Combine(targetDir, name));
         if (f == ExportFormat.Ps2Folder)
         {
-            var s = g.Ps2 ?? throw new NotSupportedException("Ordner-Export nur für PS2-Saves.");
+            var s = g.Ps2 ?? throw new NotSupportedException(L.T("Ordner-Export nur für PS2-Saves.", "Folder export only for PS2 saves."));
             string tmp = path + ".mcmtmp";
             WritePs2Folder(s, tmp);
             Directory.Move(tmp, path);
@@ -675,7 +779,7 @@ public static class SaveFormats
         bool ok = check != null && (f == ExportFormat.Ps1Raw
             ? check.Ps1 != null && check.Ps1.Data.AsSpan().SequenceEqual(g.Ps1!.Data)
             : SameContent(g, check));
-        if (!ok) throw new InvalidDataException("Überprüfung des Exports fehlgeschlagen – nichts geschrieben.");
+        if (!ok) throw new InvalidDataException(L.T("Überprüfung des Exports fehlgeschlagen – nichts geschrieben.", "Verification of the export failed – nothing written."));
         string tmpFile = path + ".mcmtmp";
         File.WriteAllBytes(tmpFile, bytes);
         File.Move(tmpFile, path);

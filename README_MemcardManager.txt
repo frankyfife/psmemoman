@@ -1,4 +1,4 @@
-MEMORY CARD MANAGER – PS1 / PS2
+PSMEMOMAN 1.1.0 – MEMORY CARD MANAGER PS1 / PS2   (github.com/frankyfife/psmemoman)
 ===============================
 
 Start: MemcardManager.exe (eine Datei, keine Installation, kein .NET nötig)
@@ -32,6 +32,13 @@ PRÜFEN, REPARIEREN, WIEDERHERSTELLEN
   • PS1: gelöschte Saves, deren Blöcke noch nicht überschrieben sind, können wiederhergestellt werden.
   • "Backup zurückspielen": jede früher von diesem Programm gespeicherte Version der Karte (Ordner "Backups").
   • Unformatierte Kartendateien werden erkannt und auf Wunsch formatiert (Original wird gesichert).
+  • RETTUNGSIMPORT (ohne Gewähr): Beschädigte/abgeschnittene Save-Dateien (PSU, MAX, CBS, SPS/XPS, PSV, MCS, PSX …),
+    die normal abgelehnt werden, können trotzdem übernommen werden – lesbare Teile bleiben erhalten, fehlende werden
+    mit Nullen aufgefüllt. Solche Saves sind rot als "Rettungsimport (ohne Gewähr)" markiert. Ob das Spiel sie lädt, ist ungewiss.
+    Aufruf: automatisch beim Import angeboten oder über "⋯" > "Rettungsimport".
+
+SPRACHE / LANGUAGE
+  Optionen > Sprache / Language: Deutsch oder English (Standard: Windows-Sprache).
 
 DRAG & DROP
   • Save auf eine andere Karte ziehen        = kopieren   (mit Umschalt = verschieben)

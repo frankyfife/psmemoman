@@ -20,9 +20,11 @@ public sealed class Ps1Card : MemoryCard
     public Ps1Container Container { get; }
     List<CardEntry> _entries = new();
     readonly string _kindName;
+    /// <summary>The "VMP signature invalid" warning (if any) – kept to find it again language independently.</summary>
+    string? _vmpSigWarning;
 
     public override Platform Platform => Platform.PS1;
-    public override string FormatName => $"{_kindName} – PS1, 128 KB (15 Blöcke)";
+    public override string FormatName => L.T($"{_kindName} – PS1, 128 KB (15 Blöcke)", $"{_kindName} – PS1, 128 KB (15 blocks)");
     public override IReadOnlyList<CardEntry> Entries => _entries;
     public override long TotalBytes => 15L * BlockSize;
     public override long FreeBytes => FreeSlots().Count * (long)BlockSize;
@@ -61,13 +63,13 @@ public sealed class Ps1Card : MemoryCard
     {
         FilePath = path;
         _kindName = kindName;
-        if (!TryDetect(file, out var c, out int off)) throw new InvalidDataException("Keine PS1-Memory-Card erkannt.");
+        if (!TryDetect(file, out var c, out int off)) throw new InvalidDataException(L.T("Keine PS1-Memory-Card erkannt.", "No PS1 memory card detected."));
         Container = c;
         _header = file.AsSpan(0, off).ToArray();
         _d = file.AsSpan(off, CardSize).ToArray();
         if (c == Ps1Container.Vmp && !PsSign.VerifyVmp(file))
-            Warnings.Add("VMP-Signatur ist ungültig – sie wird beim Speichern neu berechnet.");
-        if (!Bin.StartsWith(_d, "MC")) Warnings.Add("Kartenkopf ('MC') fehlt – Karte evtl. unformatiert, wird beim Speichern ergänzt.");
+            Warnings.Add(_vmpSigWarning = L.T("VMP-Signatur ist ungültig – sie wird beim Speichern neu berechnet.", "VMP signature is invalid – it will be recalculated when saving."));
+        if (!Bin.StartsWith(_d, "MC")) Warnings.Add(L.T("Kartenkopf ('MC') fehlt – Karte evtl. unformatiert, wird beim Speichern ergänzt.", "Card header ('MC') missing – card may be unformatted, it will be added when saving."));
         Reload();
     }
 
@@ -151,11 +153,11 @@ public sealed class Ps1Card : MemoryCard
             uint sizeField = Bin.U32(_d, (s + 1) * FrameSize + 4);
             int expected = sizeField > 0 && sizeField % BlockSize == 0 ? (int)(sizeField / BlockSize) : blocks.Count;
             var problems = new List<string>();
-            if (broken) problems.Add("Blockkette beschädigt");
-            if (expected != blocks.Count) problems.Add($"{blocks.Count} von {expected} Blöcken vorhanden");
-            if (g.Ps1!.Data[0] != 'S' || g.Ps1.Data[1] != 'C') problems.Add("Kopfdaten (SC) fehlen");
+            if (broken) problems.Add(L.T("Blockkette beschädigt", "block chain damaged"));
+            if (expected != blocks.Count) problems.Add(L.T($"{blocks.Count} von {expected} Blöcken vorhanden", $"{blocks.Count} of {expected} blocks present"));
+            if (g.Ps1!.Data[0] != 'S' || g.Ps1.Data[1] != 'C') problems.Add(L.T("Kopfdaten (SC) fehlen", "header data (SC) missing"));
             if (problems.Count > 0) { g.Damaged = true; g.Problem = string.Join(", ", problems); }
-            else if (blocks.Any(b => !FrameChecksumOk(b + 1))) g.Problem = "Prüfsumme im Verzeichnis falsch (reparierbar)";
+            else if (blocks.Any(b => !FrameChecksumOk(b + 1))) g.Problem = L.T("Prüfsumme im Verzeichnis falsch (reparierbar)", "Wrong checksum in directory (repairable)");
             list.Add(new CardEntry { Save = g, Size = g.Ps1.Data.Length, Blocks = blocks.Count, Tag = blocks.ToArray() });
         }
         _entries = list;
@@ -181,11 +183,11 @@ public sealed class Ps1Card : MemoryCard
     public override void Undelete(CardEntry entry)
     {
         if (entry.Tag is not int[] blocks) throw new InvalidOperationException();
-        if (Exists(entry.Name)) throw new InvalidOperationException($"Ein Savegame „{entry.Name}“ ist bereits vorhanden.");
+        if (Exists(entry.Name)) throw new InvalidOperationException(L.T($"Ein Savegame „{entry.Name}“ ist bereits vorhanden.", $"A save \"{entry.Name}\" already exists."));
         foreach (int s in blocks)
         {
             int st = State(s);
-            if (st is not (0xA1 or 0xA2 or 0xA3)) throw new InvalidOperationException("Die Blöcke wurden inzwischen neu belegt.");
+            if (st is not (0xA1 or 0xA2 or 0xA3)) throw new InvalidOperationException(L.T("Die Blöcke wurden inzwischen neu belegt.", "The blocks have been reused in the meantime."));
         }
         foreach (int s in blocks)
         {
@@ -203,19 +205,19 @@ public sealed class Ps1Card : MemoryCard
     public override List<CardIssue> Diagnose()
     {
         var list = new List<CardIssue>();
-        if (Container == Ps1Container.Vmp && Warnings.Any(w => w.Contains("Signatur")))
-            list.Add(new CardIssue(IssueLevel.Warning, "VMP-Signatur ungültig – PSP/Vita lehnen die Karte so ab. Beim Speichern wird sie neu berechnet.", true));
-        if (!Bin.StartsWith(_d, "MC")) list.Add(new CardIssue(IssueLevel.Warning, "Kartenkopf „MC“ fehlt.", true));
-        else if (!FrameChecksumOk(0)) list.Add(new CardIssue(IssueLevel.Warning, "Prüfsumme des Kartenkopfs falsch.", true));
+        if (Container == Ps1Container.Vmp && _vmpSigWarning != null && Warnings.Contains(_vmpSigWarning))
+            list.Add(new CardIssue(IssueLevel.Warning, L.T("VMP-Signatur ungültig – PSP/Vita lehnen die Karte so ab. Beim Speichern wird sie neu berechnet.", "VMP signature invalid – PSP/Vita will reject the card like this. It will be recalculated when saving."), true));
+        if (!Bin.StartsWith(_d, "MC")) list.Add(new CardIssue(IssueLevel.Warning, L.T("Kartenkopf „MC“ fehlt.", "Card header \"MC\" missing."), true));
+        else if (!FrameChecksumOk(0)) list.Add(new CardIssue(IssueLevel.Warning, L.T("Prüfsumme des Kartenkopfs falsch.", "Wrong card header checksum."), true));
         int badSum = Enumerable.Range(1, 15).Count(f => !FrameChecksumOk(f));
-        if (badSum > 0) list.Add(new CardIssue(IssueLevel.Warning, $"{badSum} Verzeichniseinträge mit falscher Prüfsumme (manche Konsolen/Emulatoren zeigen diese Saves nicht an).", true));
+        if (badSum > 0) list.Add(new CardIssue(IssueLevel.Warning, L.T($"{badSum} Verzeichniseinträge mit falscher Prüfsumme (manche Konsolen/Emulatoren zeigen diese Saves nicht an).", $"{badSum} directory entries with wrong checksum (some consoles/emulators do not show these saves)."), true));
         var active = ActiveBlocks();
         int orphans = Enumerable.Range(0, 15).Count(s => State(s) is 0x52 or 0x53 && !active.Contains(s));
-        if (orphans > 0) list.Add(new CardIssue(IssueLevel.Warning, $"{orphans} verwaiste Blöcke (gehören zu keinem Save) – können freigegeben werden.", true));
+        if (orphans > 0) list.Add(new CardIssue(IssueLevel.Warning, L.T($"{orphans} verwaiste Blöcke (gehören zu keinem Save) – können freigegeben werden.", $"{orphans} orphaned blocks (belong to no save) – can be freed."), true));
         int invalid = Enumerable.Range(0, 15).Count(s => State(s) is not (0x51 or 0x52 or 0x53 or 0xA0 or 0xA1 or 0xA2 or 0xA3));
-        if (invalid > 0) list.Add(new CardIssue(IssueLevel.Warning, $"{invalid} Blöcke mit ungültigem Status – können als frei markiert werden.", true));
+        if (invalid > 0) list.Add(new CardIssue(IssueLevel.Warning, L.T($"{invalid} Blöcke mit ungültigem Status – können als frei markiert werden.", $"{invalid} blocks with invalid state – can be marked as free."), true));
         if (_deleted.Count > 0)
-            list.Add(new CardIssue(IssueLevel.Info, $"{_deleted.Count} gelöschte Savegame(s) noch vollständig vorhanden – Wiederherstellung möglich: " +
+            list.Add(new CardIssue(IssueLevel.Info, L.T($"{_deleted.Count} gelöschte Savegame(s) noch vollständig vorhanden – Wiederherstellung möglich: ", $"{_deleted.Count} deleted save(s) still completely present – can be restored: ") +
                                                    string.Join(", ", _deleted.Select(d => d.Name))));
         AddSaveIssues(list);
         return list;
@@ -224,7 +226,7 @@ public sealed class Ps1Card : MemoryCard
     public override List<string> Repair()
     {
         var report = new List<string>();
-        if (!Bin.StartsWith(_d, "MC")) { _d[0] = (byte)'M'; _d[1] = (byte)'C'; report.Add("Kartenkopf „MC“ ergänzt."); }
+        if (!Bin.StartsWith(_d, "MC")) { _d[0] = (byte)'M'; _d[1] = (byte)'C'; report.Add(L.T("Kartenkopf „MC“ ergänzt.", "Card header \"MC\" added.")); }
         var active = ActiveBlocks();
         int orphans = 0, invalid = 0;
         for (int s = 0; s < 15; s++)
@@ -244,8 +246,8 @@ public sealed class Ps1Card : MemoryCard
                 invalid++;
             }
         }
-        if (orphans > 0) report.Add($"{orphans} verwaiste Blöcke freigegeben (Daten bleiben bis zum Überschreiben erhalten).");
-        if (invalid > 0) report.Add($"{invalid} Blöcke mit ungültigem Status als frei markiert.");
+        if (orphans > 0) report.Add(L.T($"{orphans} verwaiste Blöcke freigegeben (Daten bleiben bis zum Überschreiben erhalten).", $"{orphans} orphaned blocks freed (data is kept until overwritten)."));
+        if (invalid > 0) report.Add(L.T($"{invalid} Blöcke mit ungültigem Status als frei markiert.", $"{invalid} blocks with invalid state marked as free."));
         int fixedSums = 0;
         for (int f = 0; f < 16; f++)
         {
@@ -253,9 +255,9 @@ public sealed class Ps1Card : MemoryCard
             Checksum(_d, f * FrameSize);
             fixedSums++;
         }
-        if (fixedSums > 0) report.Add($"{fixedSums} Prüfsummen korrigiert.");
-        if (Container == Ps1Container.Vmp && Warnings.RemoveAll(w => w.Contains("Signatur")) > 0)
-            report.Add("VMP-Signatur wird beim Speichern neu berechnet.");
+        if (fixedSums > 0) report.Add(L.T($"{fixedSums} Prüfsummen korrigiert.", $"{fixedSums} checksums corrected."));
+        if (Container == Ps1Container.Vmp && _vmpSigWarning != null && Warnings.RemoveAll(w => w == _vmpSigWarning) > 0)
+            report.Add(L.T("VMP-Signatur wird beim Speichern neu berechnet.", "VMP signature will be recalculated when saving."));
         if (report.Count > 0) { MarkModified(); Reload(); }
         return report;
     }
@@ -290,12 +292,12 @@ public sealed class Ps1Card : MemoryCard
 
     public override void Import(SaveGame save)
     {
-        var s = save.Ps1 ?? throw new InvalidOperationException("PS2-Savegames können nicht auf eine PS1-Karte kopiert werden.");
+        var s = save.Ps1 ?? throw new InvalidOperationException(L.T("PS2-Savegames können nicht auf eine PS1-Karte kopiert werden.", "PS2 saves cannot be copied to a PS1 card."));
         s.Validate();
-        if (Exists(s.FileName)) throw new InvalidOperationException($"Savegame '{s.FileName}' existiert bereits auf der Karte.");
+        if (Exists(s.FileName)) throw new InvalidOperationException(L.T($"Savegame '{s.FileName}' existiert bereits auf der Karte.", $"Save '{s.FileName}' already exists on the card."));
         var free = FreeSlots();
         int n = s.Blocks;
-        if (n > free.Count) throw new CardFullException($"Nicht genug Platz: benötigt {n} Blöcke, frei {free.Count}.");
+        if (n > free.Count) throw new CardFullException(L.T($"Nicht genug Platz: benötigt {n} Blöcke, frei {free.Count}.", $"Not enough space: {n} blocks needed, {free.Count} free."));
         var use = free.Take(n).OrderBy(x => x).ToList();
         for (int i = 0; i < n; i++)
         {

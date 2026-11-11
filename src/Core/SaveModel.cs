@@ -137,15 +137,15 @@ public sealed class Ps2Save
 
     public void Validate()
     {
-        if (string.IsNullOrWhiteSpace(DirName)) throw new InvalidDataException("Savegame hat keinen Verzeichnisnamen.");
-        if (DirName.Length > 31) throw new InvalidDataException($"Verzeichnisname zu lang: {DirName}");
-        if (DirName.Contains('/') || DirName == "." || DirName == "..") throw new InvalidDataException($"Ungültiger Verzeichnisname: {DirName}");
+        if (string.IsNullOrWhiteSpace(DirName)) throw new InvalidDataException(L.T("Savegame hat keinen Verzeichnisnamen.", "Save has no directory name."));
+        if (DirName.Length > 31) throw new InvalidDataException(L.T($"Verzeichnisname zu lang: {DirName}", $"Directory name too long: {DirName}"));
+        if (DirName.Contains('/') || DirName == "." || DirName == "..") throw new InvalidDataException(L.T($"Ungültiger Verzeichnisname: {DirName}", $"Invalid directory name: {DirName}"));
         var names = new HashSet<string>();
         foreach (var f in Files)
         {
             if (string.IsNullOrEmpty(f.Name) || f.Name.Length > 31 || f.Name.Contains('/'))
-                throw new InvalidDataException($"Ungültiger Dateiname im Savegame: '{f.Name}'");
-            if (!names.Add(f.Name)) throw new InvalidDataException($"Doppelter Dateiname im Savegame: {f.Name}");
+                throw new InvalidDataException(L.T($"Ungültiger Dateiname im Savegame: '{f.Name}'", $"Invalid file name in save: '{f.Name}'"));
+            if (!names.Add(f.Name)) throw new InvalidDataException(L.T($"Doppelter Dateiname im Savegame: {f.Name}", $"Duplicate file name in save: {f.Name}"));
         }
     }
 }
@@ -219,10 +219,10 @@ public sealed class Ps1Save
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(FileName) || FileName.Length > 20)
-            throw new InvalidDataException($"Ungültiger PS1-Dateiname: '{FileName}'");
+            throw new InvalidDataException(L.T($"Ungültiger PS1-Dateiname: '{FileName}'", $"Invalid PS1 file name: '{FileName}'"));
         if (Data.Length == 0 || Data.Length % BlockSize != 0)
-            throw new InvalidDataException("PS1-Savegame-Daten haben keine gültige Blockgröße (8 KB).");
-        if (Blocks > 15) throw new InvalidDataException("PS1-Savegame ist größer als eine Memory Card (15 Blöcke).");
+            throw new InvalidDataException(L.T("PS1-Savegame-Daten haben keine gültige Blockgröße (8 KB).", "PS1 save data does not have a valid block size (8 KB)."));
+        if (Blocks > 15) throw new InvalidDataException(L.T("PS1-Savegame ist größer als eine Memory Card (15 Blöcke).", "PS1 save is larger than a memory card (15 blocks)."));
     }
 }
 

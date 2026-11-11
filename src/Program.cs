@@ -28,10 +28,12 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         using (var g = Graphics.FromHwnd(IntPtr.Zero)) Dpi.F = Math.Max(1f, g.DpiX / 96f);
+        MemcardManager.Core.L.Init(AppSettings.Load().Language);
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) =>
-            MessageBox.Show("Unerwarteter Fehler:\n" + e.Exception.Message + "\n\nKartendateien wurden nicht verändert, solange nicht gespeichert wurde.",
+            MessageBox.Show(MemcardManager.Core.L.T("Unerwarteter Fehler:\n", "Unexpected error:\n") + e.Exception.Message
+                + MemcardManager.Core.L.T("\n\nKartendateien wurden nicht verändert, solange nicht gespeichert wurde.", "\n\nCard files have not been changed unless they were saved."),
                 "Memory Card Manager", MessageBoxButtons.OK, MessageBoxIcon.Error);
         Application.Run(new MainForm(args));
     }
