@@ -215,7 +215,20 @@ public sealed class SaveListView : Control
         string info = it.Platform == Platform.PS1
             ? $"{it.Blocks} Block{(it.Blocks == 1 ? "" : "e")} · {Theme.FormatSize(it.Size)}"
             : Theme.FormatSize(it.Size) + (it.Modified is { } m ? " · " + m.ToString("dd.MM.yyyy HH:mm") : "");
-        TextRenderer.DrawText(g, info, Theme.Small, new Rectangle(x, y, textW, hs), sel ? Theme.Text : Theme.Dim, flags);
+        Color infoColor = sel ? Theme.Text : Theme.Dim;
+        if (it.Damaged)
+        {
+            info = "✖ BESCHÄDIGT: " + it.Problem;
+            infoColor = Color.FromArgb(255, 120, 120);
+            using var red = new SolidBrush(Theme.Danger);
+            g.FillRectangle(red, r.X, r.Y, Dpi.S(4), r.Height);
+        }
+        else if (it.Problem != null)
+        {
+            info = "⚠ " + it.Problem + " · " + info;
+            infoColor = Theme.Warn;
+        }
+        TextRenderer.DrawText(g, info, Theme.Small, new Rectangle(x, y, textW, hs), infoColor, flags);
 
         // region badge
         var reg = it.Region;

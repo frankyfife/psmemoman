@@ -232,12 +232,20 @@ public sealed class SaveGame
     public Ps2Save? Ps2 { get; init; }
     public Ps1Save? Ps1 { get; init; }
     public Platform Platform => Ps2 != null ? Platform.PS2 : Platform.PS1;
+
+    /// <summary>Set when the data could only be read partially (missing parts are filled with zeros).</summary>
+    public bool Damaged { get; set; }
+
+    /// <summary>Damage description or a minor issue (e.g. missing icon.sys).</summary>
+    public string? Problem { get; set; }
     public string Name => Ps2?.DirName ?? Ps1!.FileName;
     public string Title => Ps2?.Title ?? Ps1!.Title;
     public long Size => Ps2?.DataSize ?? Ps1!.Data.Length;
     public Region Region => RegionUtil.FromName(Name);
 
-    public SaveGame Clone() => Ps2 != null ? new SaveGame { Ps2 = Ps2.Clone() } : new SaveGame { Ps1 = Ps1!.Clone() };
+    public SaveGame Clone() => Ps2 != null
+        ? new SaveGame { Ps2 = Ps2.Clone(), Damaged = Damaged, Problem = Problem }
+        : new SaveGame { Ps1 = Ps1!.Clone(), Damaged = Damaged, Problem = Problem };
 
     /// <summary>
     /// Copy of this save under a new name. For PS2 saves, files inside that carry the old directory

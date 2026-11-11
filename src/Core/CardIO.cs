@@ -75,12 +75,56 @@ public static class CardIO
         var info = new FileInfo(path);
         if (info.Length > 256L * 1024 * 1024) throw new InvalidDataException("Datei ist zu groß für eine Memory Card.");
         var data = File.ReadAllBytes(path);
-        var card = TryOpenBytes(data, path) ?? throw new InvalidDataException(
-            data.All(b => b == 0xFF) || data.All(b => b == 0)
-                ? "Die Karte ist unformatiert (leer). Lege über \"Neue Karte\" eine formatierte Karte an."
-                : "Unbekanntes Memory-Card-Format.");
+        var card = TryOpenBytes(data, path);
+        if (card == null)
+        {
+            var unf = DetectUnformatted(data);
+            if (unf != null) throw unf;
+            throw new InvalidDataException("Unbekanntes oder stark beschädigtes Memory-Card-Format. " +
+                                           (ListBackups(path).Count > 0 ? "Für diese Datei gibt es Backups (Datei > Backup wiederherstellen)." : ""));
+        }
         card.LoadedWriteTimeUtc = info.LastWriteTimeUtc;
         return card;
+    }
+
+    /// <summary>Recognises never formatted (blank) card images by size.</summary>
+    public static UnformattedCardException? DetectUnformatted(byte[] data)
+    {
+        if (data.Length == 0) return null;
+        byte first = data[0];
+        if ((first != 0xFF && first != 0x00) || data.AsSpan().IndexOfAnyExcept(first) >= 0) return null;
+        const int mbEcc = 1081344, mb = 1048576;
+        if (data.Length == Ps1Card.CardSize) return new UnformattedCardException(Platform.PS1, 0, false);
+        if (data.Length % mbEcc == 0 && data.Length / mbEcc is 8 or 16 or 32 or 64) return new UnformattedCardException(Platform.PS2, data.Length / mbEcc, true);
+        if (data.Length % mb == 0 && data.Length / mb is 8 or 16 or 32 or 64) return new UnformattedCardException(Platform.PS2, data.Length / mb, false);
+        return null;
+    }
+
+    /// <summary>Formatted image matching an unformatted one.</summary>
+    public static byte[] FormatLike(UnformattedCardException u) =>
+        u.Platform == Platform.PS1 ? Ps1Card.FormatRaw() : Ps2Card.Format(u.SizeMb, u.Ecc);
+
+    /// <summary>Backups of a card file made by this program, newest first.</summary>
+    public static List<FileInfo> ListBackups(string cardPath)
+    {
+        try
+        {
+            string name = Path.GetFileName(cardPath.TrimEnd('\\', '/'));
+            // file names carry the backup time (name.yyyyMMdd_HHmmss_fff.bak) → sort by name
+            return new DirectoryInfo(BackupDir).GetFiles(name + ".*.bak").OrderByDescending(f => f.Name, StringComparer.Ordinal).ToList();
+        }
+        catch { return new List<FileInfo>(); }
+    }
+
+    /// <summary>Restores a backup over the card file (the current file is backed up first).</summary>
+    public static void RestoreBackup(string cardPath, string backupFile)
+    {
+        var bytes = File.ReadAllBytes(backupFile);
+        SafeWrite(cardPath, bytes, b =>
+        {
+            if (TryOpenBytes(b, cardPath) == null && DetectUnformatted(b) == null)
+                throw new InvalidDataException("Das Backup ist selbst keine lesbare Memory Card.");
+        });
     }
 
     public static MemoryCard? TryOpenBytes(byte[] data, string path)
@@ -182,7 +226,7 @@ public static class CardIO
         try
         {
             string name = Path.GetFileName(cardPath);
-            var files = new DirectoryInfo(BackupDir).GetFiles(name + ".*.bak").OrderByDescending(f => f.CreationTimeUtc).Skip(30);
+            var files = new DirectoryInfo(BackupDir).GetFiles(name + ".*.bak").OrderByDescending(f => f.Name, StringComparer.Ordinal).Skip(30);
             foreach (var f in files) f.Delete();
         }
         catch { /* backups pruning is best effort */ }

@@ -220,6 +220,59 @@ foreach (var (mb, ecc) in new[] { (8, true), (8, false), (16, true) })
         "Umbenennen inkl. gleichnamiger Datei + Region");
 }
 
+// damage detection / repair
+{
+    // damaged test card from dart_mymc: one save with broken chains + ECC bit errors
+    var bad = (Ps2Card)CardIO.Open(Path.Combine(testDir, "Mcd_test.ps2"));
+    var issues = bad.Diagnose();
+    foreach (var i in issues) Console.WriteLine($"    [{i.Level}{(i.Repairable ? ",rep" : "")}] {i.Text}");
+    var dmg = bad.Entries.FirstOrDefault(e => e.Damaged);
+    Check(dmg != null && dmg.Name == "BASLUS-20919NFL2K16", $"Beschädigter Save erkannt und gerettet: {dmg?.Name} ({dmg?.Problem})");
+    Check(issues.Any(i => i.Repairable && i.Text.StartsWith("ECC")), "ECC-Fehler als reparierbar gemeldet");
+    var healthyBefore = bad.Entries.Where(e => !e.Damaged).Select(e => e.Save.Clone()).ToList();
+    var rep = bad.Repair();
+    foreach (var r in rep) Console.WriteLine("    rep: " + r);
+    Check(!bad.Diagnose().Any(i => i.Repairable && i.Text.StartsWith("ECC")), "ECC nach Reparatur: nichts Reparierbares mehr offen");
+    Check(!rep.Any(r => r.Contains("freigegeben (+")), "Verlorene Cluster bei beschädigtem Save NICHT freigegeben");
+    bad.Delete(dmg!);
+    Check(healthyBefore.All(h => bad.Find(h.Name) is { } x && SaveFormats.SameContent(h, x.Save)), "Löschen des beschädigten Saves lässt andere Saves unversehrt");
+
+    // copy of the user card with 80 lost clusters
+    var lostCard = (Ps2Card)CardIO.Open(Path.Combine(testDir, "user_Mcd002.ps2"));
+    long freeBefore = lostCard.FreeBytes;
+    var before = lostCard.Entries.Select(e => e.Save.Clone()).ToList();
+    var rep2 = lostCard.Repair();
+    Check(lostCard.FreeBytes == freeBefore + 80 * 1024 && lostCard.Check().Count == 0, $"80 verlorene Cluster freigegeben: {string.Join(" ", rep2)}");
+    Check(before.All(h => lostCard.Find(h.Name) is { } x && SaveFormats.SameContent(h, x.Save)), "Alle Saves nach Reparatur identisch");
+    string repaired = Path.Combine(outDir, "repaired_Mcd002.ps2");
+    lostCard.Commit(repaired);
+
+    // PS1: wrong checksum, orphan block, deleted save + undelete
+    var raw = Ps1Card.FormatRaw();
+    var c1 = new Ps1Card(raw, "x.mcr", "x");
+    c1.Import(new SaveGame { Ps1 = MakePs1Save("BESLES-11111AAA", 2) });
+    c1.Import(new SaveGame { Ps1 = MakePs1Save("BESLES-22222BBB", 3) });
+    var img = c1.Build(Ps1Container.Raw);
+    img[1 * 128 + 0x30] ^= 0x01;              // corrupt checksum of frame 1
+    img[10 * 128] = 0x52; img[10 * 128 + 8] = 0xFF; img[10 * 128 + 9] = 0xFF;  // orphan block in slot 9
+    var c2 = new Ps1Card(img, "x.mcr", "x");
+    var iss = c2.Diagnose();
+    foreach (var i in iss) Console.WriteLine($"    [{i.Level}{(i.Repairable ? ",rep" : "")}] {i.Text}");
+    Check(iss.Count(i => i.Repairable) >= 2, "PS1: Prüfsumme + verwaister Block erkannt");
+    c2.Repair();
+    Check(c2.Diagnose().All(i => !i.Repairable), "PS1: nach Reparatur sauber");
+    var keep = c2.Find("BESLES-22222BBB")!.Save.Clone();
+    c2.Delete(c2.Find("BESLES-22222BBB")!);
+    Check(c2.DeletedSaves.Count == 1, "PS1: gelöschter Save wiederherstellbar");
+    c2.Undelete(c2.DeletedSaves[0]);
+    Check(c2.Find("BESLES-22222BBB") is { } u && SaveFormats.SameContent(u.Save, keep), "PS1: Save vollständig wiederhergestellt");
+
+    // unformatted cards
+    var blank = new byte[8650752]; Array.Fill(blank, (byte)0xFF);
+    var unf = CardIO.DetectUnformatted(blank);
+    Check(unf != null && unf.SizeMb == 8 && unf.Ecc && CardIO.TryOpenBytes(CardIO.FormatLike(unf), "x.ps2") != null, "Unformatierte 8-MB-Karte erkannt & formatierbar");
+}
+
 // LZARI raw roundtrips
 var rnd = new Random(1);
 foreach (int len in new[] { 1, 2, 59, 60, 61, 4096, 10000, 300000 })

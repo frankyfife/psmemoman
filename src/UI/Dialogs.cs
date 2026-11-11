@@ -355,6 +355,183 @@ public sealed class RenameDialog : DarkForm
     }
 }
 
+/// <summary>Result of the card check with repair / restore actions.</summary>
+public sealed class HealthDialog : DarkForm
+{
+    public enum Action { None, Repair, Undelete, RestoreBackup }
+    public Action Chosen { get; private set; }
+
+    public HealthDialog(MemoryCard card, List<CardIssue> issues, int backupCount)
+    {
+        Text = "Kartenprüfung – " + card.DisplayName;
+        ClientSize = Dpi.S(new Size(720, 440));
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MinimumSize = Dpi.S(new Size(560, 320));
+
+        int errors = issues.Count(i => i.Level == IssueLevel.Error), warns = issues.Count(i => i.Level == IssueLevel.Warning);
+        var head = new Label
+        {
+            Dock = DockStyle.Top, AutoSize = false, Height = Theme.Title.Height + Dpi.S(24), Padding = Dpi.S(new Padding(14, 10, 14, 0)),
+            Font = Theme.Title,
+            ForeColor = errors > 0 ? Theme.Danger : warns > 0 ? Theme.Warn : Theme.Ok,
+            Text = errors > 0 ? $"✖  {errors} Fehler, {warns} Warnung{(warns == 1 ? "" : "en")} gefunden"
+                 : warns > 0 ? $"⚠  {warns} Warnung{(warns == 1 ? "" : "en")} gefunden"
+                 : issues.Count > 0 ? "✔  Karte in Ordnung (nur Hinweise)" : "✔  Karte in Ordnung – keine Probleme gefunden"
+        };
+        var list = new ListBox
+        {
+            Dock = DockStyle.Fill, BackColor = Theme.Row, ForeColor = Theme.Text, BorderStyle = BorderStyle.None,
+            DrawMode = DrawMode.OwnerDrawVariable, IntegralHeight = false, HorizontalScrollbar = false
+        };
+        foreach (var i in issues) list.Items.Add(i);
+        if (issues.Count == 0) list.Items.Add(new CardIssue(IssueLevel.Info, "Keine Auffälligkeiten."));
+        list.MeasureItem += (_, e) =>
+        {
+            var it = (CardIssue)list.Items[e.Index];
+            string t = it.Text + (it.Repairable ? "   [reparierbar]" : "");
+            var sz = TextRenderer.MeasureText(t, Theme.Normal, new Size(list.ClientSize.Width - Dpi.S(56), 0), TextFormatFlags.WordBreak);
+            e.ItemHeight = Math.Min(255, sz.Height + Dpi.S(12));
+        };
+        list.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0) return;
+            var it = (CardIssue)list.Items[e.Index];
+            using (var b = new SolidBrush(e.Index % 2 == 0 ? Theme.Row : Theme.RowAlt)) e.Graphics.FillRectangle(b, e.Bounds);
+            var (sym, col) = it.Level switch
+            {
+                IssueLevel.Error => ("✖", Theme.Danger),
+                IssueLevel.Warning => ("⚠", Theme.Warn),
+                _ => ("ℹ", Theme.Accent)
+            };
+            TextRenderer.DrawText(e.Graphics, sym, Theme.Bold, new Rectangle(e.Bounds.X + Dpi.S(8), e.Bounds.Y + Dpi.S(5), Dpi.S(24), Dpi.S(24)), col);
+            string txt = it.Text + (it.Repairable ? "   [reparierbar]" : "");
+            TextRenderer.DrawText(e.Graphics, txt, Theme.Normal,
+                new Rectangle(e.Bounds.X + Dpi.S(36), e.Bounds.Y + Dpi.S(6), e.Bounds.Width - Dpi.S(44), e.Bounds.Height - Dpi.S(6)),
+                Theme.Text, TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+        };
+        var host = new Panel { Dock = DockStyle.Fill, Padding = Dpi.S(new Padding(14, 4, 14, 10)) };
+        host.Controls.Add(list);
+
+        var buttons = new List<Button>();
+        if (issues.Any(i => i.Repairable) && card.CanWrite)
+        {
+            var b = MakeButton("Reparieren …");
+            b.Click += (_, _) => { Chosen = Action.Repair; DialogResult = DialogResult.OK; };
+            buttons.Add(b);
+        }
+        if (card.DeletedSaves.Count > 0 && card.CanWrite)
+        {
+            var b = MakeButton($"Gelöschte wiederherstellen ({card.DeletedSaves.Count}) …");
+            b.Click += (_, _) => { Chosen = Action.Undelete; DialogResult = DialogResult.OK; };
+            buttons.Add(b);
+        }
+        if (backupCount > 0)
+        {
+            var b = MakeButton($"Backup zurückspielen ({backupCount}) …");
+            b.Click += (_, _) => { Chosen = Action.RestoreBackup; DialogResult = DialogResult.OK; };
+            buttons.Add(b);
+        }
+        var close = MakeButton("Schließen", DialogResult.Cancel);
+        buttons.Add(close);
+        var note = new Label
+        {
+            Dock = DockStyle.Bottom, AutoSize = false, Height = Theme.Small.Height * 2 + Dpi.S(10), ForeColor = Theme.Dim, Font = Theme.Small,
+            Padding = Dpi.S(new Padding(14, 2, 14, 2)),
+            Text = "Reparaturen ändern nur die Kopie im Speicher. Erst „Speichern“ schreibt die Datei – vorher wird automatisch ein Backup angelegt. " +
+                   "Beschädigte Saves lassen sich über Exportieren retten (fehlende Teile sind mit Nullen gefüllt)."
+        };
+        Controls.Add(host);
+        Controls.Add(note);
+        Controls.Add(head);
+        Controls.Add(ButtonRow(buttons.ToArray()));
+        CancelButton = close;
+    }
+}
+
+/// <summary>Choose a backup of a card file to restore.</summary>
+public sealed class BackupDialog : DarkForm
+{
+    readonly ListView _list = new()
+    {
+        Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, BackColor = Theme.Row, ForeColor = Theme.Text,
+        BorderStyle = BorderStyle.None, HeaderStyle = ColumnHeaderStyle.Nonclickable
+    };
+
+    public string? SelectedFile => _list.SelectedItems.Count == 1 ? (string)_list.SelectedItems[0].Tag! : null;
+
+    public BackupDialog(string cardPath, List<FileInfo> backups)
+    {
+        Text = "Backup zurückspielen – " + Path.GetFileName(cardPath.TrimEnd('\\'));
+        ClientSize = Dpi.S(new Size(700, 420));
+        FormBorderStyle = FormBorderStyle.Sizable;
+        _list.Columns.Add("Backup vom", Dpi.S(170));
+        _list.Columns.Add("Inhalt", Dpi.S(380));
+        _list.Columns.Add("Größe", Dpi.S(100), HorizontalAlignment.Right);
+        foreach (var f in backups)
+        {
+            string when = f.Name;
+            var m = System.Text.RegularExpressions.Regex.Match(f.Name, @"\.(\d{8})_(\d{6})_\d{3}\.bak$");
+            if (m.Success && DateTime.TryParseExact(m.Groups[1].Value + m.Groups[2].Value, "yyyyMMddHHmmss", null,
+                    System.Globalization.DateTimeStyles.None, out var dt)) when = dt.ToString("dd.MM.yyyy HH:mm:ss");
+            string content;
+            try
+            {
+                var c = CardIO.TryOpenBytes(File.ReadAllBytes(f.FullName), f.FullName);
+                content = c == null ? "nicht lesbar / unformatiert" : $"{c.Entries.Count} Saves: " + string.Join(", ", c.Entries.Take(6).Select(e => e.Title)) + (c.Entries.Count > 6 ? " …" : "");
+            }
+            catch (Exception ex) { content = "Fehler: " + ex.Message; }
+            _list.Items.Add(new ListViewItem(new[] { when, content, Theme.FormatSize(f.Length) }) { Tag = f.FullName });
+        }
+        if (_list.Items.Count > 0) _list.Items[0].Selected = true;
+        var hint = new Label
+        {
+            Dock = DockStyle.Top, AutoSize = false, Height = Theme.Normal.Height * 2 + Dpi.S(16), Padding = Dpi.S(new Padding(14, 8, 14, 0)), ForeColor = Theme.Dim,
+            Text = "Das gewählte Backup ersetzt die Kartendatei. Der aktuelle Stand wird vorher selbst als Backup gesichert – nichts geht verloren."
+        };
+        var host = new Panel { Dock = DockStyle.Fill, Padding = Dpi.S(new Padding(14, 4, 14, 10)) };
+        host.Controls.Add(_list);
+        var ok = MakeButton("Zurückspielen", DialogResult.OK);
+        var cancel = MakeButton("Abbrechen", DialogResult.Cancel);
+        _list.DoubleClick += (_, _) => { if (SelectedFile != null) { DialogResult = DialogResult.OK; Close(); } };
+        Controls.Add(host);
+        Controls.Add(hint);
+        Controls.Add(ButtonRow(ok, cancel));
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+}
+
+/// <summary>Pick deleted saves to restore.</summary>
+public sealed class UndeleteDialog : DarkForm
+{
+    readonly CheckedListBox _list = new() { Dock = DockStyle.Fill, BackColor = Theme.Row, ForeColor = Theme.Text, BorderStyle = BorderStyle.None, CheckOnClick = true };
+    readonly IReadOnlyList<CardEntry> _entries;
+
+    public List<CardEntry> Selected => _list.CheckedIndices.Cast<int>().Select(i => _entries[i]).ToList();
+
+    public UndeleteDialog(IReadOnlyList<CardEntry> deleted)
+    {
+        _entries = deleted;
+        Text = "Gelöschte Savegames wiederherstellen";
+        ClientSize = Dpi.S(new Size(560, 340));
+        foreach (var e in deleted) _list.Items.Add($"{e.Title}   ({e.Name}, {e.Blocks} Block{(e.Blocks == 1 ? "" : "e")})", true);
+        var hint = new Label
+        {
+            Dock = DockStyle.Top, AutoSize = false, Height = Theme.Normal.Height * 2 + Dpi.S(16), Padding = Dpi.S(new Padding(14, 8, 14, 0)), ForeColor = Theme.Dim,
+            Text = "Diese Saves wurden gelöscht, ihre Blöcke sind aber noch unverändert vorhanden."
+        };
+        var host = new Panel { Dock = DockStyle.Fill, Padding = Dpi.S(new Padding(14, 4, 14, 10)) };
+        host.Controls.Add(_list);
+        var ok = MakeButton("Wiederherstellen", DialogResult.OK);
+        var cancel = MakeButton("Abbrechen", DialogResult.Cancel);
+        Controls.Add(host);
+        Controls.Add(hint);
+        Controls.Add(ButtonRow(ok, cancel));
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+}
+
 public sealed class TextReportDialog : DarkForm
 {
     public TextReportDialog(string title, string text)

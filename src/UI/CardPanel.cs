@@ -56,7 +56,7 @@ public sealed class CardPanel : Panel
         _header.Paint += PaintHeader;
         _header.MouseClick += (_, e) =>
         {
-            if (Card.Warnings.Count > 0 && _warnRect.Contains(e.Location)) ShowWarnings();
+            if (_warnRect.Contains(e.Location)) CheckCard();
         };
         _close.FlatAppearance.BorderSize = 0;
         _close.ForeColor = Theme.Dim;
@@ -81,7 +81,9 @@ public sealed class CardPanel : Panel
         _btnMore.DropDownItems.Add("Alle auswählen", null, (_, _) => List.SelectAll());
         _btnMore.DropDownItems.Add("Alle Savegames exportieren …", null, (_, _) => { List.SelectAll(); ExportSelected(); });
         _btnMore.DropDownItems.Add(new ToolStripSeparator());
-        _btnMore.DropDownItems.Add("Karte prüfen", null, (_, _) => CheckCard());
+        _btnMore.DropDownItems.Add("Karte prüfen / reparieren …", null, (_, _) => CheckCard());
+        _btnMore.DropDownItems.Add("Gelöschte Savegames wiederherstellen …", null, (_, _) => UndeleteSaves());
+        _btnMore.DropDownItems.Add("Backup zurückspielen …", null, (_, _) => RestoreBackup());
         _btnMore.DropDownItems.Add("Im Explorer zeigen", null, (_, _) => ShowInExplorer());
         _btnMore.DropDownItems.Add(new ToolStripSeparator());
         _btnMore.DropDownItems.Add("Karte schließen", null, (_, _) => _host.ClosePanel(this));
@@ -162,14 +164,14 @@ public sealed class CardPanel : Panel
         int y = (h - th - sh - Dpi.S(2)) / 2;
         string title = $"Slot {Slot}  ·  {Card.DisplayName}" + (Card.IsModified ? "  *" : "");
         TextRenderer.DrawText(g, title, Theme.Title, new Rectangle(x, y, right - x, th), Theme.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        int warnW = 0;
-        if (Card.Warnings.Count > 0)
-        {
-            string wt = "⚠ " + Card.Warnings.Count;
-            warnW = TextRenderer.MeasureText(wt, Theme.Small).Width + Dpi.S(8);
-            _warnRect = new Rectangle(right - warnW, y + th + Dpi.S(2), warnW, sh);
-            TextRenderer.DrawText(g, wt, Theme.Small, _warnRect, Theme.Warn, TextFormatFlags.HorizontalCenter);
-        }
+        // health badge (click → check / repair dialog)
+        int errors = _issues.Count(i => i.Level == IssueLevel.Error), warns = _issues.Count(i => i.Level == IssueLevel.Warning);
+        var (wt, wc) = errors > 0 ? ($"✖ {errors} Fehler", Theme.Danger)
+                     : warns > 0 ? ($"⚠ {warns} Warnung{(warns == 1 ? "" : "en")}", Theme.Warn)
+                     : ("✔ OK", Theme.Ok);
+        int warnW = TextRenderer.MeasureText(wt, Theme.Small).Width + Dpi.S(14);
+        _warnRect = new Rectangle(right - warnW, y + th + Dpi.S(2), warnW, sh);
+        TextRenderer.DrawText(g, wt, Theme.Small, _warnRect, wc, TextFormatFlags.HorizontalCenter);
         string sub = Card.FormatName + (Card.CanWrite ? "" : "  ·  NUR LESEN");
         TextRenderer.DrawText(g, sub, Theme.Small, new Rectangle(x, y + th + Dpi.S(2), right - x - warnW, sh),
             Card.CanWrite ? Theme.Dim : Theme.Warn, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
@@ -193,8 +195,14 @@ public sealed class CardPanel : Panel
             TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter);
     }
 
+    List<CardIssue> _issues = new();
+
+    public IReadOnlyList<CardIssue> Issues => _issues;
+
     public void RefreshView()
     {
+        try { _issues = Card.Diagnose(); }
+        catch (Exception ex) { _issues = new List<CardIssue> { new(IssueLevel.Error, "Prüfung fehlgeschlagen: " + ex.Message) }; }
         List.SetItems(Card.Entries.OrderBy(e => e.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(e => e.Name));
         List.EmptyText = Card.CanWrite
             ? "Keine Savegames auf dieser Karte.\n\nSavegames oder Karten hierher ziehen\noder über „Importieren“ hinzufügen."
@@ -360,9 +368,15 @@ public sealed class CardPanel : Panel
             var head = new byte[Math.Min(fi.Length, 4096)];
             fs.ReadExactly(head);
             if (Ps2Card.IsPs2Image(head)) return true;
-            if (fi.Length > 4 * 1024 * 1024) return false;
+            // card-sized files with a card extension count as cards even if damaged/unformatted
+            // (opening them then offers formatting or restoring a backup)
+            string ext = fi.Extension.ToLowerInvariant();
+            bool cardExt = ext is ".ps2" or ".vm2" or ".vmc" or ".mc2" or ".mcr" or ".mcd" or ".mc" or ".srm" or ".vm1" or ".gme" or ".vgs" or ".vmp";
+            bool cardSize = fi.Length == Ps1Card.CardSize || fi.Length % 1081344 == 0 || fi.Length % 1048576 == 0;
+            if (cardExt && cardSize) return true;
+            if (fi.Length > 70L * 1024 * 1024) return false;
             var all = File.ReadAllBytes(p);
-            return Ps1Card.TryDetect(all, out _, out _);
+            return Ps1Card.TryDetect(all, out _, out _) || CardIO.DetectUnformatted(all) != null;
         }
         catch { return false; }
     }
@@ -539,6 +553,7 @@ public sealed class CardPanel : Panel
             {
                 Card.Import(save.Clone());
                 imported++;
+                if (save.Damaged) errors.Add($"{save.Name}: übernommen, aber beschädigt ({save.Problem}).");
                 done.Add(save);
                 names.Add(save.Name);
             }
@@ -681,27 +696,102 @@ public sealed class CardPanel : Panel
         dlg.ShowDialog(this);
     }
 
-    void ShowWarnings()
+    void CheckCard()
     {
-        using var dlg = new TextReportDialog("Hinweise zur Karte " + Card.DisplayName, string.Join(Environment.NewLine, Card.Warnings));
+        RefreshView();
+        var backups = Card is Ps2FolderCard ? new List<FileInfo>() : CardIO.ListBackups(Card.FilePath);
+        HealthDialog.Action action;
+        using (var dlg = new HealthDialog(Card, _issues, backups.Count))
+        {
+            dlg.ShowDialog(this);
+            action = dlg.DialogResult == DialogResult.OK ? dlg.Chosen : HealthDialog.Action.None;
+        }
+        switch (action)
+        {
+            case HealthDialog.Action.Repair: RepairCard(); break;
+            case HealthDialog.Action.Undelete: UndeleteSaves(); break;
+            case HealthDialog.Action.RestoreBackup: RestoreBackup(); break;
+        }
+    }
+
+    void RepairCard()
+    {
+        if (!Card.CanWrite) return;
+        var r = MessageBox.Show(this,
+            "Alle als „reparierbar“ markierten Probleme jetzt beheben?\n\nDas passiert zuerst nur im Speicher; erst „Speichern“ schreibt die Datei (mit Backup).",
+            "Reparieren", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (r != DialogResult.Yes) return;
+        List<string> report;
+        try { report = Card.Repair(); }
+        catch (Exception ex) { MessageBox.Show(this, "Reparatur fehlgeschlagen: " + ex.Message, "Reparieren", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+        AfterChange();
+        using var dlg = new TextReportDialog("Reparatur – " + Card.DisplayName,
+            report.Count == 0 ? "Nichts zu reparieren." : string.Join(Environment.NewLine, report.Select(x => "• " + x)) +
+            (Card.IsModified && !_host.Settings.AutoSave ? Environment.NewLine + Environment.NewLine + "Zum Übernehmen „Speichern“ klicken." : ""));
         dlg.ShowDialog(this);
     }
 
-    void CheckCard()
+    void UndeleteSaves()
     {
-        var lines = new List<string> { Card.FormatName, Card.FilePath, "" };
-        if (Card is Ps2Card p2)
+        if (Card.DeletedSaves.Count == 0)
         {
-            var msgs = p2.Check();
-            lines.Add(msgs.Count == 0 ? "Keine Fehler im Dateisystem gefunden." : "Gefundene Probleme:");
-            lines.AddRange(msgs.Select(m => "  • " + m));
-            if (msgs.Any(m => m.Contains("verlorene")))
-                lines.Add("\nVerlorene Cluster sind harmlos (Platz, der keinem Save gehört). Sie werden nicht verändert.");
+            MessageBox.Show(this, Card.Platform == Platform.PS1
+                    ? "Auf dieser Karte gibt es keine gelöschten Savegames, die noch vollständig vorhanden sind."
+                    : "Auf PS2-Karten werden gelöschte Saves vom Dateisystem freigegeben und können nicht zuverlässig wiederhergestellt werden.\n" +
+                      "Nutze stattdessen „Backup zurückspielen“ (jede Änderung durch dieses Programm wird gesichert).",
+                "Wiederherstellen", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
         }
-        else lines.Add("Struktur gelesen, keine Fehler.");
-        if (Card.Warnings.Count > 0) { lines.Add(""); lines.Add("Hinweise beim Laden:"); lines.AddRange(Card.Warnings.Select(w => "  • " + w)); }
-        using var dlg = new TextReportDialog("Kartenprüfung – " + Card.DisplayName, string.Join(Environment.NewLine, lines));
-        dlg.ShowDialog(this);
+        using var dlg = new UndeleteDialog(Card.DeletedSaves);
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        int ok = 0;
+        var errors = new List<string>();
+        var names = new List<string>();
+        foreach (var e in dlg.Selected)
+        {
+            try { Card.Undelete(e); ok++; names.Add(e.Name); }
+            catch (Exception ex) { errors.Add($"{e.Name}: {ex.Message}"); }
+        }
+        AfterChange(names);
+        _host.SetStatus($"Slot {Slot}: {ok} Savegame(s) wiederhergestellt" + (errors.Count > 0 ? $", {errors.Count} Fehler: " + string.Join("; ", errors) : "") +
+                        (Card.IsModified && !_host.Settings.AutoSave ? " – zum Übernehmen „Speichern“ klicken." : "."), errors.Count > 0);
+    }
+
+    void RestoreBackup()
+    {
+        if (Card is Ps2FolderCard)
+        {
+            MessageBox.Show(this, "Bei Ordner-Karten liegen gelöschte Saves als Ordner im Backup-Ordner. Sie können per Drag & Drop wieder auf die Karte gezogen werden.",
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try { Process.Start("explorer.exe", $"\"{CardIO.BackupDir}\""); } catch { }
+            return;
+        }
+        var backups = CardIO.ListBackups(Card.FilePath);
+        if (backups.Count == 0)
+        {
+            MessageBox.Show(this, "Für diese Karte gibt es noch keine Backups (sie entstehen bei jedem Speichern durch dieses Programm).",
+                "Backup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (Card.IsModified)
+        {
+            var q = MessageBox.Show(this, "Ungespeicherte Änderungen an dieser Karte gehen beim Zurückspielen verloren. Fortfahren?", "Backup",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (q != DialogResult.Yes) return;
+        }
+        using var dlg = new BackupDialog(Card.FilePath, backups);
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedFile == null) return;
+        try
+        {
+            CardIO.RestoreBackup(Card.FilePath, dlg.SelectedFile);
+            ReplaceCard(CardIO.Open(Card.FilePath));
+            _host.SetStatus($"Slot {Slot}: Backup zurückgespielt (vorheriger Stand ebenfalls gesichert).");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Zurückspielen fehlgeschlagen:\n" + ex.Message + "\n\nDie Kartendatei wurde nicht verändert.", "Backup",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     void ShowInExplorer()

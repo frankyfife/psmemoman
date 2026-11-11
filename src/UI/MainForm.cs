@@ -124,7 +124,8 @@ public sealed class MainForm : Form, ICardHost
             toOpen.AddRange(args.Where(a => File.Exists(a) || Directory.Exists(a)));
             var cards = toOpen.Where(CardPanel.IsCardPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (cards.Count > 0) OpenCards(cards);
-            SetStatus(_panels.Count == 0 ? "Bereit – Memory Card ins Fenster ziehen oder öffnen." : $"{_panels.Count} Karte(n) geladen.");
+            if (_panels.Count == 0) SetStatus("Bereit – Memory Card ins Fenster ziehen oder öffnen.");
+            else if (!_panels.Any(p => p.Issues.Any(i => i.Level != IssueLevel.Info))) SetStatus($"{_panels.Count} Karte(n) geladen.");
             CleanupTemp();
         };
         UpdateChrome();
@@ -170,13 +171,40 @@ public sealed class MainForm : Form, ICardHost
             }
             try
             {
-                var card = CardIO.Open(path);
+                MemoryCard card;
+                try { card = CardIO.Open(path); }
+                catch (UnformattedCardException u)
+                {
+                    string what = u.Platform == Platform.PS1 ? "PS1-Karte (128 KB)" : $"PS2-Karte ({u.SizeMb} MB, {(u.Ecc ? "mit" : "ohne")} ECC)";
+                    var q = MessageBox.Show(this,
+                        $"{Path.GetFileName(path)} ist eine unformatierte (leere) {what}.\n\nJetzt formatieren? Die Originaldatei wird vorher im Ordner „Backups“ gesichert.",
+                        "Unformatierte Karte", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (q != DialogResult.Yes) continue;
+                    var img = CardIO.FormatLike(u);
+                    CardIO.SafeWrite(path, img, b => { if (CardIO.TryOpenBytes(b, path) == null) throw new InvalidDataException("Formatierung fehlgeschlagen."); });
+                    card = CardIO.Open(path);
+                }
+                catch (Exception ex) when (ex is InvalidDataException && !Directory.Exists(path) && CardIO.ListBackups(path).Count > 0)
+                {
+                    var q = MessageBox.Show(this,
+                        $"{Path.GetFileName(path)} kann nicht gelesen werden:\n{ex.Message}\n\nFür diese Datei gibt es {CardIO.ListBackups(path).Count} Backup(s). Eines davon zurückspielen?",
+                        "Karte beschädigt", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (q != DialogResult.Yes) continue;
+                    using var dlg = new BackupDialog(path, CardIO.ListBackups(path));
+                    if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedFile == null) continue;
+                    CardIO.RestoreBackup(path, dlg.SelectedFile);
+                    card = CardIO.Open(path);
+                }
                 var panel = new CardPanel(this, card);
                 _panels.Add(panel);
                 _content.Controls.Add(panel);
                 Settings.AddRecent(path);
                 Settings.LastCardDir = Path.GetDirectoryName(path) ?? "";
-                SetStatus($"{card.DisplayName} geöffnet: {card.Entries.Count} Savegames.");
+                int errs = panel.Issues.Count(i => i.Level == IssueLevel.Error), warns = panel.Issues.Count(i => i.Level == IssueLevel.Warning);
+                if (errs + warns > 0)
+                    SetStatus($"{card.DisplayName}: {card.Entries.Count} Savegames – {errs} Fehler, {warns} Warnungen gefunden. Details/Reparatur: Klick auf die Zustandsanzeige im Kartenkopf.", errs > 0);
+                else
+                    SetStatus($"{card.DisplayName} geöffnet: {card.Entries.Count} Savegames.");
             }
             catch (Exception ex) { errors.Add($"{Path.GetFileName(path)}: {ex.Message}"); }
         }
@@ -467,7 +495,7 @@ public sealed class MainForm : Form, ICardHost
         MessageBox.Show(this,
             "Memory Card Manager für PS1 & PS2 – Version " + Application.ProductVersion.Split('+')[0] + "\n\n" +
             "PS2: PCSX2 (.ps2, Datei & Ordner), PS3 (.VM2), OPL (.vmc), MemCard PRO2/SD2PSX (.mc2), Rohabbild (.bin), 8–64 MB, mit/ohne ECC\n" +
-            "PS1: .mcr .mcd .mc .srm .gme .vgs .mem .vmp (lesen) .VM1 .ddf .mci .psm …\n" +
+            "PS1: .mcr .mcd .mc .srm .gme .vgs .mem .VMP .VM1 .ddf .mci .psm …\n" +
             "Saves: PSU, MAX, CBS, SPS/XPS, PSV, ZIP, Ordner, MCS, PSX/MCB/MCX/PDA, RAW\n\n" +
             "Formatwissen u. a. nach mymc (Ross Ridge, Public Domain) / dart_mymc, LZARI nach Haruhiko Okumura.",
             "Über", MessageBoxButtons.OK, MessageBoxIcon.Information);

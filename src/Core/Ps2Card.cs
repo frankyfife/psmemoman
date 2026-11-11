@@ -18,6 +18,7 @@ public sealed class Ps2Card : MemoryCard
     bool[] _fatDirty = Array.Empty<bool>();
     int _allocLimit, _allocCursor;
     int _eccCorrected;
+    readonly HashSet<uint> _eccFixable = new(), _eccBad = new();
     List<CardEntry> _entries = new();
     readonly string _kind;
 
@@ -77,7 +78,6 @@ public sealed class Ps2Card : MemoryCard
         if (limit > 0 && limit < _allocLimit) _allocLimit = limit;
         LoadFat();
         Reload();
-        if (_eccCorrected > 0) Warnings.Add($"{_eccCorrected} Bitfehler per ECC korrigiert (nur beim Lesen).");
     }
 
     // ------------------------------------------------------------------ low level
@@ -100,8 +100,17 @@ public sealed class Ps2Card : MemoryCard
                     var chunk = dst.Slice(c * 128, 128);
                     var saved = chunk.ToArray();
                     int r = Ecc.Check(chunk, spare.Slice(c * 3, 3));
-                    if (r == 1 && !chunk.SequenceEqual(saved)) _eccCorrected++;
-                    else if (r == 2) saved.CopyTo(chunk); // uncorrectable (e.g. erased page): use raw data
+                    if (r == 1)
+                    {
+                        if (!chunk.SequenceEqual(saved)) _eccCorrected++;
+                        _eccFixable.Add(abs);
+                    }
+                    else if (r == 2)
+                    {
+                        saved.CopyTo(chunk); // uncorrectable: use raw data
+                        bool erased = chunk.IndexOfAnyExcept((byte)0xFF) < 0 && spare.Slice(c * 3, 3).IndexOfAnyExcept((byte)0xFF) < 0;
+                        if (!erased) _eccBad.Add(abs);
+                    }
                 }
             }
         }
@@ -202,6 +211,28 @@ public sealed class Ps2Card : MemoryCard
         return res;
     }
 
+    /// <summary>Reads as much as possible; missing parts stay zero. Returns false if incomplete or unreadable.</summary>
+    bool ReadDataRescue(uint first, long length, out byte[] res)
+    {
+        res = Array.Empty<byte>();
+        if (length <= 0) return true;
+        if (length > (long)_allocEnd * _clusterSize) return false;
+        res = new byte[length];
+        var chain = Chain(first);
+        long pos = 0;
+        bool ok = true;
+        foreach (var c in chain)
+        {
+            if (pos >= length) break;
+            var d = ReadAlloc(c);
+            if (_eccBad.Contains(c + _allocOffset)) ok = false;
+            int n = (int)Math.Min(_clusterSize, length - pos);
+            Array.Copy(d, 0, res, pos, n);
+            pos += n;
+        }
+        return ok && pos >= length;
+    }
+
     List<Ps2DirEntry> ReadDir(uint first, uint count)
     {
         if (count > 100000) throw new InvalidDataException("Verzeichnis ist beschädigt.");
@@ -268,9 +299,10 @@ public sealed class Ps2Card : MemoryCard
         return first;
     }
 
-    void FreeChain(uint first)
+    void FreeChain(uint first, HashSet<uint>? keep = null)
     {
-        foreach (var c in Chain(first)) SetFat(c, _fat[c] & ClusterMask);
+        foreach (var c in Chain(first))
+            if (keep == null || !keep.Contains(c)) SetFat(c, _fat[c] & ClusterMask);
         _allocCursor = 0;
     }
 
@@ -289,43 +321,62 @@ public sealed class Ps2Card : MemoryCard
                 Warnings.Add($"Datei im Hauptverzeichnis wird ignoriert: {e.Name}");
                 continue;
             }
-            try
+            var game = ReadSave(e);
+            list.Add(new CardEntry
             {
-                var save = ReadSave(e);
-                list.Add(new CardEntry
-                {
-                    Save = new SaveGame { Ps2 = save },
-                    Size = (long)save.ClustersNeeded(_clusterSize) * _clusterSize,
-                    Modified = e.Modified.ToLocal(),
-                    Tag = i
-                });
-            }
-            catch (Exception ex)
-            {
-                Warnings.Add($"Savegame '{e.Name}' ist beschädigt: {ex.Message}");
-            }
+                Save = game,
+                Size = (long)game.Ps2!.ClustersNeeded(_clusterSize) * _clusterSize,
+                Modified = e.Modified.ToLocal(),
+                Tag = i
+            });
         }
         _entries = list;
     }
 
-    Ps2Save ReadSave(Ps2DirEntry de)
+    /// <summary>Reads a save; damaged parts are rescued as far as possible and the save is flagged.</summary>
+    SaveGame ReadSave(Ps2DirEntry de)
     {
         var s = new Ps2Save { DirName = de.Name, Mode = de.Mode, Created = de.Created, Modified = de.Modified, Attr = de.Attr };
-        var ents = ReadDir(de.Cluster, de.Length);
+        var problems = new List<string>();
+        var g = new SaveGame { Ps2 = s };
+        List<Ps2DirEntry> ents;
+        if (de.Length > 10000 || !ReadDataRescue(de.Cluster, (long)Math.Min(de.Length, 10000u) * Ps2DirEntry.Size, out var dirData))
+        {
+            problems.Add("Verzeichnis ist beschädigt");
+            if (de.Length > 10000) dirData = Array.Empty<byte>();
+            else ReadDataRescue(de.Cluster, (long)de.Length * Ps2DirEntry.Size, out dirData);
+        }
+        ents = new List<Ps2DirEntry>();
+        for (int i = 0; i + Ps2DirEntry.Size <= dirData.Length; i += Ps2DirEntry.Size) ents.Add(Ps2DirEntry.Parse(dirData.AsSpan(i)));
         for (int i = 2; i < ents.Count; i++)
         {
             var e = ents[i];
             if (!e.Exists) continue;
             if (e.IsFile)
+            {
+                bool ok = ReadDataRescue(e.Cluster, e.Length, out var data);
+                if (!ok) problems.Add($"Datei „{e.Name}“ unvollständig/fehlerhaft");
                 s.Files.Add(new Ps2SaveFile
                 {
-                    Name = e.Name, Mode = e.Mode, Created = e.Created, Modified = e.Modified, Attr = e.Attr,
-                    Data = ReadData(e.Cluster, e.Length)
+                    Name = e.Name, Mode = e.Mode, Created = e.Created, Modified = e.Modified, Attr = e.Attr, Data = data
                 });
+            }
             else
                 s.Warnings.Add($"Unterverzeichnis '{e.Name}' wird nicht unterstützt und ignoriert.");
         }
-        return s;
+        if (problems.Count > 0)
+        {
+            g.Damaged = true;
+            g.Problem = string.Join(", ", problems);
+            return g;
+        }
+        // minor issues (the save still works on the console, but shows no / a default icon)
+        var sysFile = s.Find("icon.sys");
+        if (sysFile == null) g.Problem = s.DirName.Contains("DATA-SYSTEM") ? null : "keine icon.sys (kein eigenes Icon)";
+        else if (s.IconSys == null) g.Problem = "icon.sys ist ungültig";
+        else if (s.Find(s.IconSys.IconNormal) == null && !s.DirName.Contains("DATA-SYSTEM"))
+            g.Problem = $"Icon-Datei „{s.IconSys.IconNormal}“ fehlt";
+        return g;
     }
 
     public override bool Exists(string name) => ReadRoot().Skip(2).Any(e => e.Exists && e.Name == name);
@@ -342,7 +393,7 @@ public sealed class Ps2Card : MemoryCard
         for (int i = 2; i < root.Count; i++)
             if (root[i].Exists && root[i].Name == name) { idx = i; break; }
         if (idx < 0) throw new InvalidOperationException($"Savegame '{name}' nicht gefunden.");
-        FreeTree(root[idx], 0);
+        FreeTree(root[idx], 0, UsedClusters(idx));
         var e = root[idx];
         e.Mode = (ushort)(e.Mode & ~Ps2DirEntry.DfExists);
         WriteDirEntry(_rootCluster, idx, e);
@@ -351,18 +402,51 @@ public sealed class Ps2Card : MemoryCard
         Reload();
     }
 
-    void FreeTree(Ps2DirEntry e, int depth)
+    void FreeTree(Ps2DirEntry e, int depth, HashSet<uint> keep)
     {
         if (e.IsDir && depth < 8)
         {
-            var ents = ReadDir(e.Cluster, e.Length);
-            for (int i = 2; i < ents.Count; i++)
-                if (ents[i].Exists) FreeTree(ents[i], depth + 1);
-            FreeChain(e.Cluster);
+            if (e.Length <= 10000)
+            {
+                ReadDataRescue(e.Cluster, (long)e.Length * Ps2DirEntry.Size, out var d);
+                for (int i = 2 * Ps2DirEntry.Size; i + Ps2DirEntry.Size <= d.Length; i += Ps2DirEntry.Size)
+                {
+                    var child = Ps2DirEntry.Parse(d.AsSpan(i));
+                    if (child.Exists) FreeTree(child, depth + 1, keep);
+                }
+            }
+            FreeChain(e.Cluster, keep);
         }
         else if (e.Length > 0 && e.Cluster != ChainEnd)
         {
-            FreeChain(e.Cluster);
+            FreeChain(e.Cluster, keep);
+        }
+    }
+
+    /// <summary>All clusters used by the root directory and every save except the one at <paramref name="exceptIndex"/>.</summary>
+    HashSet<uint> UsedClusters(int exceptIndex)
+    {
+        var set = new HashSet<uint>();
+        var root = ReadRoot();
+        foreach (var c in Chain(_rootCluster)) set.Add(c);
+        for (int i = 2; i < root.Count; i++)
+        {
+            if (i == exceptIndex || !root[i].Exists) continue;
+            MarkTree(root[i], set, 0);
+        }
+        return set;
+    }
+
+    void MarkTree(Ps2DirEntry e, HashSet<uint> set, int depth)
+    {
+        if (e.Cluster == ChainEnd || (e.Length == 0 && !e.IsDir)) return;
+        foreach (var c in Chain(e.Cluster)) set.Add(c);
+        if (!e.IsDir || depth >= 8 || e.Length > 10000) return;
+        ReadDataRescue(e.Cluster, (long)e.Length * Ps2DirEntry.Size, out var d);
+        for (int i = 2 * Ps2DirEntry.Size; i + Ps2DirEntry.Size <= d.Length; i += Ps2DirEntry.Size)
+        {
+            var child = Ps2DirEntry.Parse(d.AsSpan(i));
+            if (child.Exists) MarkTree(child, set, depth + 1);
         }
     }
 
@@ -491,19 +575,26 @@ public sealed class Ps2Card : MemoryCard
         MarkSaved();
     }
 
-    /// <summary>Integrity check: cross-linked / lost clusters and broken chains.</summary>
-    public List<string> Check()
+    sealed class Scan
     {
-        var msgs = new List<string>();
+        public readonly List<string> Errors = new();
+        public readonly List<uint> Lost = new();
+        public int CrossLinked, BrokenChains;
+    }
+
+    /// <summary>Walks the whole file system: cross-linked / lost clusters and broken chains.</summary>
+    Scan ScanFileSystem()
+    {
+        var s = new Scan();
         var used = new bool[_allocEnd];
         void Mark(uint first, long len, string name)
         {
-            if (len <= 0) return;
+            if (len <= 0 || first == ChainEnd) return;
             var ch = Chain(first);
-            if (ch.Count != Bin.DivUp(len, _clusterSize)) msgs.Add($"{name}: Clusterkette passt nicht zur Größe.");
+            if (ch.Count != Bin.DivUp(len, _clusterSize)) { s.Errors.Add($"{name}: Clusterkette passt nicht zur Größe."); s.BrokenChains++; }
             foreach (var c in ch)
             {
-                if (used[c]) msgs.Add($"{name}: Cluster {c} mehrfach verwendet.");
+                if (used[c]) { s.Errors.Add($"{name}: Cluster {c} wird mehrfach verwendet (querverlinkt)."); s.CrossLinked++; }
                 used[c] = true;
             }
         }
@@ -517,16 +608,92 @@ public sealed class Ps2Card : MemoryCard
             if (e.IsDir)
             {
                 Mark(e.Cluster, e.Length * 512L, e.Name);
-                var ents = ReadDir(e.Cluster, e.Length);
-                for (int k = 2; k < ents.Count; k++)
-                    if (ents[k].Exists && ents[k].IsFile) Mark(ents[k].Cluster, ents[k].Length, e.Name + "/" + ents[k].Name);
+                if (e.Length > 10000) { s.Errors.Add($"{e.Name}: Verzeichnisgröße unplausibel."); s.BrokenChains++; continue; }
+                ReadDataRescue(e.Cluster, (long)e.Length * Ps2DirEntry.Size, out var d);
+                for (int k = 2 * Ps2DirEntry.Size; k + Ps2DirEntry.Size <= d.Length; k += Ps2DirEntry.Size)
+                {
+                    var f = Ps2DirEntry.Parse(d.AsSpan(k));
+                    if (f.Exists && f.IsFile) Mark(f.Cluster, f.Length, e.Name + "/" + f.Name);
+                }
             }
             else Mark(e.Cluster, e.Length, e.Name);
         }
-        int lost = 0;
-        for (int i = 0; i < _allocLimit; i++) if ((_fat[i] & AllocBit) != 0 && !used[i]) lost++;
-        if (lost > 0) msgs.Add($"{lost} verlorene Cluster (belegt, aber keiner Datei zugeordnet).");
+        for (int i = 0; i < _allocLimit; i++) if ((_fat[i] & AllocBit) != 0 && !used[i]) s.Lost.Add((uint)i);
+        return s;
+    }
+
+    /// <summary>Integrity check messages (kept for the tests).</summary>
+    public List<string> Check()
+    {
+        var s = ScanFileSystem();
+        var msgs = new List<string>(s.Errors);
+        if (s.Lost.Count > 0) msgs.Add($"{s.Lost.Count} verlorene Cluster (belegt, aber keiner Datei zugeordnet).");
         return msgs;
+    }
+
+    public override List<CardIssue> Diagnose()
+    {
+        var list = new List<CardIssue>();
+        Scan s;
+        try { s = ScanFileSystem(); }
+        catch (Exception ex)
+        {
+            list.Add(new CardIssue(IssueLevel.Error, "Dateisystem nicht lesbar: " + ex.Message));
+            return list;
+        }
+        foreach (var w in Warnings)
+            if (!w.Contains("Bitfehler")) list.Add(new CardIssue(IssueLevel.Warning, w));
+        foreach (var err in s.Errors.Distinct().Take(30)) list.Add(new CardIssue(IssueLevel.Error, err));
+        int fixable = _eccFixable.Count(c => !_eccBad.Contains(c));
+        if (fixable > 0)
+            list.Add(new CardIssue(IssueLevel.Warning,
+                $"ECC: Bitfehler in {fixable} Clustern wurden beim Lesen korrigiert – die Korrektur kann dauerhaft zurückgeschrieben werden.", true));
+        if (_eccBad.Count > 0)
+            list.Add(new CardIssue(IssueLevel.Error, $"ECC: {_eccBad.Count} Cluster mit nicht korrigierbaren Fehlern – Daten darin evtl. falsch (werden nicht verändert)."));
+        bool damaged = Entries.Any(e => e.Damaged) || s.BrokenChains > 0 || s.CrossLinked > 0;
+        if (s.Lost.Count > 0)
+            list.Add(damaged
+                ? new CardIssue(IssueLevel.Info, $"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB). Werden NICHT freigegeben, solange beschädigte Saves existieren (könnten zu ihnen gehören).")
+                : new CardIssue(IssueLevel.Info, $"{s.Lost.Count} verlorene Cluster ({s.Lost.Count} KB belegt, aber keinem Save zugeordnet) – können freigegeben werden.", true));
+        AddSaveIssues(list);
+        return list;
+    }
+
+    public override List<string> Repair()
+    {
+        var report = new List<string>();
+        if (_eccFixable.Count > 0)
+        {
+            int n = 0;
+            foreach (var abs in _eccFixable.ToList())
+            {
+                if (_eccBad.Contains(abs)) continue; // contains uncorrectable chunks too: leave untouched
+                var data = ReadCluster(abs); // corrected data
+                WriteCluster(abs, data);      // fresh ECC
+                n++;
+            }
+            _eccFixable.Clear();
+            _eccCorrected = 0;
+            if (n > 0) report.Add($"ECC in {n} Clustern neu geschrieben (korrigierte Daten dauerhaft übernommen).");
+        }
+        var s = ScanFileSystem();
+        bool damaged = Entries.Any(e => e.Damaged) || s.BrokenChains > 0 || s.CrossLinked > 0;
+        if (s.Lost.Count > 0 && !damaged)
+        {
+            foreach (var c in s.Lost) SetFat(c, FreeEnd);
+            _allocCursor = 0;
+            FlushFat();
+            report.Add($"{s.Lost.Count} verlorene Cluster freigegeben (+{s.Lost.Count} KB freier Speicher).");
+        }
+        else if (s.Lost.Count > 0)
+            report.Add("Verlorene Cluster nicht freigegeben, weil beschädigte Saves existieren (Daten könnten dazugehören).");
+        if (report.Count > 0)
+        {
+            Warnings.RemoveAll(w => w.Contains("Bitfehler"));
+            MarkModified();
+            Reload();
+        }
+        return report;
     }
 
     // ------------------------------------------------------------------ format

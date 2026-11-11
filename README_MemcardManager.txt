@@ -11,7 +11,8 @@ KARTEN (bis zu 4 gleichzeitig, jede in einem eigenen Segment)
   PS1  .mcr .mcd .mc .srm .ps .ddf .mci .psm (Rohformat, ePSXe/DuckStation/RetroArch/PCSX2)
        PS3 virtuelle Karte .VM1, DexDrive .gme, VGS/Bleem .vgs/.mem, POPStarter .VMC
                                                    – lesen, schreiben, neu anlegen
-       PSP/Vita .vmp                               – nur lesen (signiert) → "Speichern unter" konvertiert
+       PSP/Vita .VMP (SCEVMC0.VMP)                 – lesen, schreiben, neu anlegen (Signatur wird neu berechnet)
+         PSP:  ms0:/PSP/SAVEDATA/<TITEL-ID>/SCEVMC0.VMP   Vita: ux0:/pspemu/PSP/SAVEDATA/<TITEL-ID>/
   Die Erkennung erfolgt am Inhalt, nicht an der Dateiendung. Alle Regionen (PAL, NTSC-U, NTSC-J,
   Korea, Asien), Shift-JIS-Titel werden korrekt angezeigt.
 
@@ -19,7 +20,18 @@ SAVEGAME-FORMATE
   Import PS2: PSU, MAX (Action Replay), CBS (CodeBreaker), SPS/XPS (SharkPort/X-Port),
               PSV (PS3), ZIP, Save-Ordner (mit icon.sys), komplette Karten
   Import PS1: MCS, PSX/MCB/MCX/PDA (Action Replay/GameShark/Xploder), RAW, PSV (PS3), komplette Karten
-  Export PS2: PSU, MAX, CBS, Ordner, ZIP          Export PS1: MCS, PSX (AR), RAW
+  Export PS2: PSU, MAX, CBS, Ordner, ZIP, PSV     Export PS1: MCS, PSX (AR), RAW, PSV
+  PSV (PS3) wird signiert erzeugt, Dateiname wie von der PS3 (z. B. BESLES-537036B6B.PSV) → USB: PS3/EXPORT/PSV/
+  Rechtsklick > "Umbenennen / Region ändern": Produktcode/Region eines Saves ändern (Original wird standardmäßig behalten).
+
+PRÜFEN, REPARIEREN, WIEDERHERSTELLEN
+  • Jede Karte zeigt oben rechts ihren Zustand: ✔ OK / ⚠ Warnungen / ✖ Fehler – Klick öffnet die Kartenprüfung.
+  • Beschädigte Saves werden rot markiert und so weit wie möglich gelesen; per Export lassen sie sich retten.
+  • "Reparieren" behebt nur sichere Dinge: PS2-ECC-Bitfehler, verlorene Cluster (nur wenn kein Save beschädigt ist),
+    PS1-Prüfsummen, Kartenkopf, verwaiste/ungültige Blöcke. Daten, die zu beschädigten Saves gehören könnten, bleiben unangetastet.
+  • PS1: gelöschte Saves, deren Blöcke noch nicht überschrieben sind, können wiederhergestellt werden.
+  • "Backup zurückspielen": jede früher von diesem Programm gespeicherte Version der Karte (Ordner "Backups").
+  • Unformatierte Kartendateien werden erkannt und auf Wunsch formatiert (Original wird gesichert).
 
 DRAG & DROP
   • Save auf eine andere Karte ziehen        = kopieren   (mit Umschalt = verschieben)

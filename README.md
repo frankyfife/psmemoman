@@ -16,6 +16,15 @@ animierte Savegame-Icons, Drag & Drop und nicht-destruktives Speichern mit autom
 - **Neue Karten** für PS1 und PS2 in allen unten genannten Formaten, **Speichern unter** konvertiert zwischen Formaten.
 - **Sicherheit**: Änderungen nur im Speicher bis „Speichern“; neues Abbild wird verifiziert, in eine Temp-Datei geschrieben,
   zurückgelesen und erst dann ersetzt; die alte Datei landet vorher im Ordner `Backups`. Exporte überschreiben nie.
+- **Prüfen & Reparieren**: Zustandsanzeige je Karte (✔ / ⚠ / ✖), beschädigte Saves werden markiert und gerettet
+  (Rettungs-Export, fehlende Teile mit Nullen gefüllt).
+  - PS2: Clusterketten, Querverlinkungen, verlorene Cluster (freigeben), ECC-Bitfehler (dauerhaft korrigieren),
+    nicht korrigierbare ECC-Fehler; beim Löschen beschädigter Saves werden querverlinkte Cluster geschützt.
+  - PS1: Prüfsummen, Kartenkopf, verwaiste/ungültige Blöcke, beschädigte Blockketten,
+    **Wiederherstellen gelöschter Saves**.
+  - Backups zurückspielen, unformatierte Karten erkennen und formatieren.
+- **Umbenennen / Region ändern** (Produktcode, inkl. gleichnamiger Dateien im Save).
+- **VMP (PSP/Vita)** und **PSV (PS3)** werden beim Schreiben korrekt signiert (gegen echte, von Sony signierte VMPs geprüft).
 
 ### Kartenformate
 
