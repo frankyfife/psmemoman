@@ -66,9 +66,15 @@ Formats are detected by content, not by file extension.
 - A game only finds saves with its own product code (e.g. `BESLES-…` = PAL, `BASLUS-…` = USA). Saves from another
   region can sometimes be used after renaming them – no guarantee.
 
-## Download / build
+## Download
 
-Prebuilt: see the releases (if available) – or build it yourself with the .NET 9 SDK on Windows:
+**[Latest release](https://github.com/frankyfife/psmemoman/releases/latest)** – download `PSMemoMan-<version>-win-x64.zip`,
+unzip anywhere and run `MemcardManager.exe` (Windows 10/11 x64, no installation, .NET runtime included).
+Windows SmartScreen may warn because the EXE is not code-signed – choose *More info → Run anyway*.
+
+## Build
+
+Build it yourself with the .NET 9 SDK on Windows:
 
 ```
 cd src
